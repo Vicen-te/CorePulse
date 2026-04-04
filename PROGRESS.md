@@ -75,7 +75,14 @@
 - [x] setup.sh installs desktop launcher automatically
 - [x] Fixed README screenshot layout alignment with Alert column
 
+### v2.6 — Physical Core Mapping & CPU Power (completed 2026-04-05)
+
+- [x] Load cores now match temperature core labels (Core 0, Core 4, Core 8...)
+- [x] P-cores with HT average both thread loads into one reading
+- [x] Physical core → logical CPU mapping read from /proc/cpuinfo
+- [x] CPU Power section always visible (shows 0.0 W without root)
+
 ### Known Issues
 
-- CPU Power (Intel RAPL) requires root access to read `/sys/class/powercap/intel-rapl:0/energy_uj`. Run with `sudo` or add read permissions to see CPU package power.
-- GPU Fan shows 0% when GPU is idle — this is correct behavior (0-RPM fan mode on modern NVIDIA GPUs). Fans spin up under load.
+- CPU Power (Intel RAPL) shows 0.0 W without root. Run with `sudo` or `sudo chmod o+r /sys/class/powercap/intel-rapl:0/energy_uj` for real values.
+- GPU Fan shows 0% when GPU is idle — correct behavior (0-RPM fan mode). Fans spin up under load.

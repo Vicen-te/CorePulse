@@ -449,7 +449,9 @@ class MainWindow(QMainWindow):
             if item is None:
                 continue
 
-            has_data = reading.current > 0 or reading.sensor_type in (SensorType.LOAD, SensorType.FAN)
+            has_data = reading.current > 0 or reading.sensor_type in (
+                SensorType.LOAD, SensorType.FAN, SensorType.POWER,
+            )
             if has_data:
                 self._active_sensors.add(key)
 

@@ -173,26 +173,26 @@ class CpuTotalLoadSensor(BaseSensor):
 
 
 class CpuCoreLoadSensor(BaseSensor):
-    """Reads per-core CPU load percentage."""
+    """Reads load for a physical core, averaging its logical threads."""
 
-    def __init__(self, core_index: int) -> None:
-        """Initialize for a specific core index."""
-        self._core_index = core_index
+    def __init__(self, logical_indices: list[int], name: str) -> None:
+        """Initialize with logical CPU indices belonging to this physical core."""
+        self._logical_indices = logical_indices
+        self._name = name
 
     def get_temperature(self) -> float:
-        """Return this core's load percentage."""
+        """Return this physical core's average load percentage."""
         percpu = _CpuLoadCache.get_percpu()
-        if self._core_index < len(percpu):
-            return percpu[self._core_index]
-        return 0.0
+        vals = [percpu[i] for i in self._logical_indices if i < len(percpu)]
+        return sum(vals) / len(vals) if vals else 0.0
 
     def get_name(self) -> str:
-        """Return the sensor name."""
-        return f"Core #{self._core_index}"
+        """Return the sensor name matching the temperature core label."""
+        return self._name
 
     def is_available(self) -> bool:
         """Check availability."""
-        return self._core_index < psutil.cpu_count(logical=True)
+        return all(i < psutil.cpu_count(logical=True) for i in self._logical_indices)
 
     def get_sensor_type(self) -> SensorType:
         """Return LOAD type."""
@@ -315,22 +315,38 @@ def discover_cpu_sensors() -> list[BaseSensor]:
     if clock_sensor.is_available():
         sensors.append(clock_sensor)
 
-    # --- Load: total + per-core ---
-    # Initialize cpu_percent tracking
+    # --- Load: total + per physical core ---
     psutil.cpu_percent(interval=None, percpu=True)
-
     sensors.append(CpuTotalLoadSensor())
-    core_count = psutil.cpu_count(logical=False) or psutil.cpu_count(logical=True) or 0
-    for i in range(core_count):
-        sensors.append(CpuCoreLoadSensor(i))
 
-    # --- Power: Intel RAPL ---
+    # Build physical core → logical CPU mapping from /proc/cpuinfo
+    core_to_logical: dict[int, list[int]] = {}
+    current_proc: int | None = None
+    try:
+        with open("/proc/cpuinfo") as f:
+            for line in f:
+                if line.startswith("processor"):
+                    current_proc = int(line.split(":", 1)[1].strip())
+                elif line.startswith("core id") and current_proc is not None:
+                    core_id = int(line.split(":", 1)[1].strip())
+                    core_to_logical.setdefault(core_id, []).append(current_proc)
+    except OSError:
+        core_to_logical = {}
+
+    if core_to_logical:
+        # Create load sensors matching temperature core labels
+        for core_id in sorted(core_to_logical):
+            name = f"Core {core_id}"
+            sensors.append(CpuCoreLoadSensor(core_to_logical[core_id], name))
+    else:
+        # Fallback: one sensor per logical CPU
+        logical_count = psutil.cpu_count(logical=True) or 0
+        for i in range(logical_count):
+            sensors.append(CpuCoreLoadSensor([i], f"Core {i}"))
+
+    # --- Power: Intel RAPL (may need root for read access) ---
     rapl_path = "/sys/class/powercap/intel-rapl:0/energy_uj"
     if Path(rapl_path).exists():
-        try:
-            Path(rapl_path).read_text()
-            sensors.append(CpuPowerSensor(rapl_path))
-        except PermissionError:
-            pass  # RAPL often requires root
+        sensors.append(CpuPowerSensor(rapl_path))
 
     return sensors
