@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: IN PROGRESS
-## Last Commit: feat(ui): add system tray, alerts, data export, and system info
+## Last Commit: docs: add comprehensive README with install and usage guide
 ## Last Updated: 2026-04-04
 
 ### Completed
@@ -12,13 +12,13 @@
 - [x] Step 3: Sensor display widgets with live updates (2026-04-04)
 - [x] Step 4: Real-time temperature charts (2026-04-04)
 - [x] Step 5: System tray, alerts, CSV export, system info (2026-04-04)
+- [x] Step 6: README and documentation (2026-04-04)
 
 ### In Progress
 
-- [ ] Step 6: README and documentation
+- [ ] Step 7: Packaging and desktop integration
 
 ### Pending
-- [ ] Step 7: Packaging and desktop integration
 
 ### Known Issues
 
