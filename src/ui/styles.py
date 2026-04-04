@@ -1,38 +1,39 @@
 """
 QSS theme stylesheet for ThermalCore.
 
-Colors adapt automatically to the system dark/light preference.
+Colors adapt automatically to the system dark/light preference
+and switch live when the system theme changes.
 """
 
-# Local
-from utils.config import (
-    COLOR_BACKGROUND,
-    COLOR_PANEL,
-    COLOR_ACCENT,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-)
 
-THEME_QSS: str = f"""
+def build_qss(palette: dict[str, str]) -> str:
+    """Build a QSS stylesheet from a color palette dict."""
+    bg = palette["background"]
+    panel = palette["panel"]
+    accent = palette["accent"]
+    text1 = palette["text_primary"]
+    text2 = palette["text_secondary"]
+
+    return f"""
 QWidget {{
-    background-color: {COLOR_BACKGROUND};
-    color: {COLOR_TEXT_PRIMARY};
+    background-color: {bg};
+    color: {text1};
     font-family: "Segoe UI", "Noto Sans", sans-serif;
     font-size: 13px;
 }}
 
 QMainWindow {{
-    background-color: {COLOR_BACKGROUND};
+    background-color: {bg};
 }}
 
 QScrollBar:vertical {{
-    background: {COLOR_PANEL};
+    background: {panel};
     width: 8px;
     border: none;
 }}
 
 QScrollBar::handle:vertical {{
-    background: {COLOR_ACCENT};
+    background: {accent};
     min-height: 30px;
     border-radius: 4px;
 }}
@@ -43,16 +44,21 @@ QScrollBar::sub-line:vertical {{
 }}
 
 QStatusBar {{
-    background-color: {COLOR_PANEL};
-    color: {COLOR_TEXT_SECONDARY};
+    background-color: {panel};
+    color: {text2};
     font-size: 11px;
-    border-top: 1px solid {COLOR_ACCENT};
+    border-top: 1px solid {accent};
 }}
 
 QToolTip {{
-    background-color: {COLOR_PANEL};
-    color: {COLOR_TEXT_PRIMARY};
-    border: 1px solid {COLOR_ACCENT};
+    background-color: {panel};
+    color: {text1};
+    border: 1px solid {accent};
     padding: 4px;
 }}
 """
+
+
+# Build initial QSS at import time
+from utils.config import get_palette
+THEME_QSS: str = build_qss(get_palette())

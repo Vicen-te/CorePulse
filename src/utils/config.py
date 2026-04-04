@@ -2,8 +2,7 @@
 Application constants and configuration.
 
 Centralized configuration values used throughout the application.
-All magic numbers and thresholds are defined here.
-Theme colors are selected automatically based on the system preference.
+Theme colors adapt automatically to the system dark/light preference.
 """
 
 # Standard library
@@ -23,37 +22,8 @@ TEMP_THRESHOLD_MEDIUM: int = 70
 TEMP_THRESHOLD_HIGH: int = 85
 CRITICAL_TEMP_THRESHOLD: int = 85
 
-
-def _detect_dark_mode() -> bool:
-    """Detect whether the system is using a dark theme."""
-    try:
-        r = subprocess.run(
-            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
-            capture_output=True, text=True, timeout=2,
-        )
-        if "dark" in r.stdout.lower():
-            return True
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-
-    try:
-        r = subprocess.run(
-            ["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"],
-            capture_output=True, text=True, timeout=2,
-        )
-        if "dark" in r.stdout.lower():
-            return True
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-
-    # Default to dark if detection fails
-    return True
-
-
-IS_DARK_THEME: bool = _detect_dark_mode()
-
-# --- Dark theme colors ---
-_DARK = {
+# --- Theme palettes ---
+DARK_PALETTE: dict[str, str] = {
     "background": "#1a1a2e",
     "panel": "#16213e",
     "accent": "#0f3460",
@@ -66,29 +36,78 @@ _DARK = {
     "temp_critical": "#e94560",
 }
 
-# --- Light theme colors ---
-_LIGHT = {
+LIGHT_PALETTE: dict[str, str] = {
     "background": "#f5f5f5",
-    "panel": "#e8e8e8",
-    "accent": "#c0c0c0",
+    "panel": "#e0e0e0",
+    "accent": "#bdbdbd",
     "warning": "#d32f2f",
     "text_primary": "#1a1a1a",
-    "text_secondary": "#666666",
+    "text_secondary": "#555555",
     "temp_cool": "#2e7d32",
     "temp_warm": "#f57f17",
     "temp_hot": "#e65100",
     "temp_critical": "#c62828",
 }
 
-_THEME = _DARK if IS_DARK_THEME else _LIGHT
 
-COLOR_BACKGROUND: str = _THEME["background"]
-COLOR_PANEL: str = _THEME["panel"]
-COLOR_ACCENT: str = _THEME["accent"]
-COLOR_WARNING: str = _THEME["warning"]
-COLOR_TEXT_PRIMARY: str = _THEME["text_primary"]
-COLOR_TEXT_SECONDARY: str = _THEME["text_secondary"]
-COLOR_TEMP_COOL: str = _THEME["temp_cool"]
-COLOR_TEMP_WARM: str = _THEME["temp_warm"]
-COLOR_TEMP_HOT: str = _THEME["temp_hot"]
-COLOR_TEMP_CRITICAL: str = _THEME["temp_critical"]
+def detect_dark_mode() -> bool:
+    """Detect whether the system is using a dark theme."""
+    # Check GNOME color-scheme
+    try:
+        r = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return "dark" in r.stdout.lower()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    # Check GTK theme name
+    try:
+        r = subprocess.run(
+            ["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            return "dark" in r.stdout.lower()
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    return True
+
+
+def get_palette() -> dict[str, str]:
+    """Return the active color palette based on system theme."""
+    return DARK_PALETTE if detect_dark_mode() else LIGHT_PALETTE
+
+
+# Current palette — set once at import, updated live by ThemeWatcher
+_palette: dict[str, str] = get_palette()
+
+COLOR_BACKGROUND: str = _palette["background"]
+COLOR_PANEL: str = _palette["panel"]
+COLOR_ACCENT: str = _palette["accent"]
+COLOR_WARNING: str = _palette["warning"]
+COLOR_TEXT_PRIMARY: str = _palette["text_primary"]
+COLOR_TEXT_SECONDARY: str = _palette["text_secondary"]
+COLOR_TEMP_COOL: str = _palette["temp_cool"]
+COLOR_TEMP_WARM: str = _palette["temp_warm"]
+COLOR_TEMP_HOT: str = _palette["temp_hot"]
+COLOR_TEMP_CRITICAL: str = _palette["temp_critical"]
+
+
+def apply_palette(palette: dict[str, str]) -> None:
+    """Update module-level color variables from a palette dict."""
+    import utils.config as _self
+    _self.COLOR_BACKGROUND = palette["background"]
+    _self.COLOR_PANEL = palette["panel"]
+    _self.COLOR_ACCENT = palette["accent"]
+    _self.COLOR_WARNING = palette["warning"]
+    _self.COLOR_TEXT_PRIMARY = palette["text_primary"]
+    _self.COLOR_TEXT_SECONDARY = palette["text_secondary"]
+    _self.COLOR_TEMP_COOL = palette["temp_cool"]
+    _self.COLOR_TEMP_WARM = palette["temp_warm"]
+    _self.COLOR_TEMP_HOT = palette["temp_hot"]
+    _self.COLOR_TEMP_CRITICAL = palette["temp_critical"]
+    _self._palette = palette

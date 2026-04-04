@@ -28,10 +28,11 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHeaderView,
 )
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QAction, QBrush
 
 # Local
+import utils.config as cfg
 from utils.config import (
     DEFAULT_WINDOW_WIDTH,
     DEFAULT_WINDOW_HEIGHT,
@@ -39,16 +40,6 @@ from utils.config import (
     TEMP_THRESHOLD_LOW,
     TEMP_THRESHOLD_MEDIUM,
     TEMP_THRESHOLD_HIGH,
-    COLOR_TEMP_COOL,
-    COLOR_TEMP_WARM,
-    COLOR_TEMP_HOT,
-    COLOR_TEMP_CRITICAL,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_PANEL,
-    COLOR_ACCENT,
-    COLOR_BACKGROUND,
-    COLOR_WARNING,
 )
 from sensors.base_sensor import BaseSensor, SensorType, SENSOR_FORMATS, format_value
 from sensors.cpu_sensor import discover_cpu_sensors
@@ -108,7 +99,7 @@ def _create_branch_icons() -> tuple[str, str]:
     """Create triangle arrow icons for tree branches and return temp file paths."""
     import tempfile, os
     arrow_size = 12
-    color = QColor(COLOR_TEXT_SECONDARY)
+    color = QColor(cfg.COLOR_TEXT_SECONDARY)
 
     # Right-pointing triangle (collapsed)
     closed_pix = QPixmap(arrow_size, arrow_size)
@@ -150,12 +141,12 @@ def _create_app_icon() -> QIcon:
     pixmap.fill(QColor(0, 0, 0, 0))
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QColor(COLOR_WARNING))
+    painter.setBrush(QColor(cfg.COLOR_WARNING))
     painter.setPen(Qt.PenStyle.NoPen)
     painter.drawEllipse(4, 4, 56, 56)
-    painter.setBrush(QColor(COLOR_BACKGROUND))
+    painter.setBrush(QColor(cfg.COLOR_BACKGROUND))
     painter.drawEllipse(14, 14, 36, 36)
-    painter.setBrush(QColor(COLOR_TEMP_COOL))
+    painter.setBrush(QColor(cfg.COLOR_TEMP_COOL))
     painter.drawEllipse(22, 22, 20, 20)
     painter.end()
     return QIcon(pixmap)
@@ -189,10 +180,12 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
         self.resize(750, 650)
 
+        self._is_dark: bool = cfg.detect_dark_mode()
         self._discover_sensors()
         self._setup_ui()
         self._setup_system_tray()
         self._start_polling()
+        self._start_theme_watcher()
 
     def _discover_sensors(self) -> None:
         """Find all available sensors."""
@@ -222,9 +215,9 @@ class MainWindow(QMainWindow):
 
     def _setup_header(self, parent: QVBoxLayout) -> None:
         """Create the system info header bar."""
-        header = QFrame()
+        self._header = header = QFrame()
         header.setStyleSheet(
-            f"background-color: {COLOR_PANEL}; border-bottom: 1px solid {COLOR_ACCENT};"
+            f"background-color: {cfg.COLOR_PANEL}; border-bottom: 1px solid {cfg.COLOR_ACCENT};"
         )
         header.setFixedHeight(32)
 
@@ -243,7 +236,7 @@ class MainWindow(QMainWindow):
         ]:
             lbl = QLabel(f"<b>{key}:</b> {val}")
             lbl.setFont(hfont)
-            lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
+            lbl.setStyleSheet(f"color: {cfg.COLOR_TEXT_SECONDARY}; background: transparent;")
             hl.addWidget(lbl)
         hl.addStretch()
         parent.addWidget(header)
@@ -272,11 +265,18 @@ class MainWindow(QMainWindow):
         self._tree.itemDoubleClicked.connect(self._on_item_double_clicked)
 
         closed_icon, open_icon = _create_branch_icons()
+        self._tree.setStyleSheet(self._build_tree_qss(closed_icon, open_icon))
 
-        self._tree.setStyleSheet(f"""
+        self._populate_tree()
+        parent.addWidget(self._tree, stretch=1)
+
+    @staticmethod
+    def _build_tree_qss(closed_icon: str, open_icon: str) -> str:
+        """Build QSS for the tree widget using current theme colors."""
+        return f"""
             QTreeWidget {{
-                background-color: {COLOR_BACKGROUND};
-                color: {COLOR_TEXT_PRIMARY};
+                background-color: {cfg.COLOR_BACKGROUND};
+                color: {cfg.COLOR_TEXT_PRIMARY};
                 border: none;
                 outline: none;
             }}
@@ -284,10 +284,10 @@ class MainWindow(QMainWindow):
                 padding: 3px 6px;
             }}
             QTreeWidget::item:selected {{
-                background-color: {COLOR_ACCENT};
+                background-color: {cfg.COLOR_ACCENT};
             }}
             QTreeWidget::branch {{
-                background-color: {COLOR_BACKGROUND};
+                background-color: {cfg.COLOR_BACKGROUND};
             }}
             QTreeWidget::branch:has-children:!has-siblings:closed,
             QTreeWidget::branch:closed:has-children:has-siblings {{
@@ -298,19 +298,16 @@ class MainWindow(QMainWindow):
                 image: url({open_icon});
             }}
             QHeaderView::section {{
-                background-color: {COLOR_PANEL};
-                color: {COLOR_TEXT_PRIMARY};
+                background-color: {cfg.COLOR_PANEL};
+                color: {cfg.COLOR_TEXT_PRIMARY};
                 padding: 5px 8px;
                 border: none;
-                border-bottom: 2px solid {COLOR_ACCENT};
-                border-right: 1px solid {COLOR_ACCENT};
+                border-bottom: 2px solid {cfg.COLOR_ACCENT};
+                border-right: 1px solid {cfg.COLOR_ACCENT};
                 font-weight: bold;
                 font-size: 11px;
             }}
-        """)
-
-        self._populate_tree()
-        parent.addWidget(self._tree, stretch=1)
+        """
 
     def _populate_tree(self) -> None:
         """Build the 3-level tree: Hardware → Type → Sensor."""
@@ -346,7 +343,7 @@ class MainWindow(QMainWindow):
         bold = QFont("JetBrains Mono", 10, QFont.Weight.Bold)
         type_font = QFont("JetBrains Mono", 10)
         type_font.setItalic(False)
-        secondary_brush = QBrush(QColor(COLOR_TEXT_SECONDARY))
+        secondary_brush = QBrush(QColor(cfg.COLOR_TEXT_SECONDARY))
 
         for hw_name, type_groups in grouped.items():
             if not type_groups:
@@ -395,9 +392,9 @@ class MainWindow(QMainWindow):
 
     def _setup_bottom_bar(self, parent: QVBoxLayout) -> None:
         """Create the bottom bar with export button."""
-        bar = QFrame()
+        self._bottom_bar = bar = QFrame()
         bar.setStyleSheet(
-            f"background-color: {COLOR_PANEL}; border-top: 1px solid {COLOR_ACCENT};"
+            f"background-color: {cfg.COLOR_PANEL}; border-top: 1px solid {cfg.COLOR_ACCENT};"
         )
         bar.setFixedHeight(36)
 
@@ -406,19 +403,19 @@ class MainWindow(QMainWindow):
         bl.setSpacing(6)
 
         hint_lbl = QLabel("Double-click Alert column to set threshold")
-        hint_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
+        hint_lbl.setStyleSheet(f"color: {cfg.COLOR_TEXT_SECONDARY}; background: transparent;")
         bl.addWidget(hint_lbl)
 
         bl.addStretch()
 
-        export_btn = QPushButton("Export CSV")
-        export_btn.setFixedWidth(90)
-        export_btn.setStyleSheet(
-            f"background-color: {COLOR_ACCENT}; color: {COLOR_TEXT_PRIMARY}; "
+        self._export_btn = QPushButton("Export CSV")
+        self._export_btn.setFixedWidth(90)
+        self._export_btn.setStyleSheet(
+            f"background-color: {cfg.COLOR_ACCENT}; color: {cfg.COLOR_TEXT_PRIMARY}; "
             f"border: none; border-radius: 3px; padding: 3px 10px; font-weight: bold;"
         )
-        export_btn.clicked.connect(self._export_csv)
-        bl.addWidget(export_btn)
+        self._export_btn.clicked.connect(self._export_csv)
+        bl.addWidget(self._export_btn)
 
         parent.addWidget(bar)
 
@@ -429,6 +426,57 @@ class MainWindow(QMainWindow):
         self._poller = SensorPoller(self._all_sensors)
         self._poller.readings_updated.connect(self._on_readings_updated)
         self._poller.start()
+
+    def _start_theme_watcher(self) -> None:
+        """Poll system theme every 5 seconds and switch if changed."""
+        self._theme_timer = QTimer(self)
+        self._theme_timer.timeout.connect(self._check_theme)
+        self._theme_timer.start(5000)
+
+    def _check_theme(self) -> None:
+        """Detect theme change and re-apply styles."""
+        is_dark = cfg.detect_dark_mode()
+        if is_dark == self._is_dark:
+            return
+        self._is_dark = is_dark
+        palette = cfg.DARK_PALETTE if is_dark else cfg.LIGHT_PALETTE
+        cfg.apply_palette(palette)
+
+        from ui.styles import build_qss
+        from PySide6.QtWidgets import QApplication
+        QApplication.instance().setStyleSheet(build_qss(palette))
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        """Re-apply inline styles after a theme switch."""
+        # Header
+        self._header.setStyleSheet(
+            f"background-color: {cfg.COLOR_PANEL}; border-bottom: 1px solid {cfg.COLOR_ACCENT};"
+        )
+        for lbl in self._header.findChildren(QLabel):
+            lbl.setStyleSheet(f"color: {cfg.COLOR_TEXT_SECONDARY}; background: transparent;")
+
+        # Tree
+        closed_icon, open_icon = _create_branch_icons()
+        self._tree.setStyleSheet(self._build_tree_qss(closed_icon, open_icon))
+
+        # Bottom bar
+        self._bottom_bar.setStyleSheet(
+            f"background-color: {cfg.COLOR_PANEL}; border-top: 1px solid {cfg.COLOR_ACCENT};"
+        )
+        self._export_btn.setStyleSheet(
+            f"background-color: {cfg.COLOR_ACCENT}; color: {cfg.COLOR_TEXT_PRIMARY}; "
+            f"border: none; border-radius: 3px; padding: 3px 10px; font-weight: bold;"
+        )
+
+        # Rebuild type group brushes
+        secondary_brush = QBrush(QColor(cfg.COLOR_TEXT_SECONDARY))
+        root = self._tree.invisibleRootItem()
+        for hw_i in range(root.childCount()):
+            hw_item = root.child(hw_i)
+            for tg_i in range(hw_item.childCount()):
+                tg_item = hw_item.child(tg_i)
+                tg_item.setForeground(0, secondary_brush)
 
     def _on_readings_updated(self, readings: dict[str, SensorReading]) -> None:
         """Handle new readings from the background thread."""
@@ -557,12 +605,12 @@ class MainWindow(QMainWindow):
             del self._alert_thresholds[key]
             self._triggered_alerts.discard(key)
             item.setText(4, "")
-            item.setForeground(4, QBrush(QColor(COLOR_TEXT_PRIMARY)))
+            item.setForeground(4, QBrush(QColor(cfg.COLOR_TEXT_PRIMARY)))
         elif value > 0:
             self._alert_thresholds[key] = value
             fmt, unit = SENSOR_FORMATS.get(st, ("{:.1f}", ""))
             item.setText(4, fmt.format(value) + unit)
-            item.setForeground(4, QBrush(QColor(COLOR_TEXT_SECONDARY)))
+            item.setForeground(4, QBrush(QColor(cfg.COLOR_TEXT_SECONDARY)))
 
     def _check_alerts(self, readings: dict[str, "SensorReading"]) -> None:
         """Check per-sensor alert thresholds."""
@@ -587,12 +635,12 @@ class MainWindow(QMainWindow):
                 # Color the alert cell red when exceeded
                 item = self._sensor_items.get(key)
                 if item:
-                    item.setForeground(4, QBrush(QColor(COLOR_WARNING)))
+                    item.setForeground(4, QBrush(QColor(cfg.COLOR_WARNING)))
             else:
                 self._triggered_alerts.discard(key)
                 item = self._sensor_items.get(key)
                 if item and key in self._alert_thresholds:
-                    item.setForeground(4, QBrush(QColor(COLOR_TEXT_SECONDARY)))
+                    item.setForeground(4, QBrush(QColor(cfg.COLOR_TEXT_SECONDARY)))
 
     # --- CSV export ---
 
@@ -661,10 +709,10 @@ class MainWindow(QMainWindow):
     def _get_temp_color(temp: float) -> str:
         """Return color for a temperature value."""
         if temp < TEMP_THRESHOLD_LOW:
-            return COLOR_TEMP_COOL
+            return cfg.COLOR_TEMP_COOL
         elif temp < TEMP_THRESHOLD_MEDIUM:
-            return COLOR_TEMP_WARM
+            return cfg.COLOR_TEMP_WARM
         elif temp < TEMP_THRESHOLD_HIGH:
-            return COLOR_TEMP_HOT
+            return cfg.COLOR_TEMP_HOT
         else:
-            return COLOR_TEMP_CRITICAL
+            return cfg.COLOR_TEMP_CRITICAL
