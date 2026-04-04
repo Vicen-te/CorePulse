@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHeaderView,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QAction, QBrush
 
 # Local
@@ -57,6 +57,41 @@ _TYPE_ORDER: list[str] = [
 
 # Maximum temperature log entries
 _MAX_LOG_ENTRIES: int = 36000
+
+
+class _ThemeWatcher(QObject):
+    """Watches for system theme changes via DBus (gdbus monitor) and emits a signal."""
+
+    theme_changed = Signal(bool)
+
+    def start(self) -> None:
+        """Start monitoring DBus for theme setting changes."""
+        from PySide6.QtCore import QProcess
+        self._proc = QProcess(self)
+        self._proc.setProgram("gdbus")
+        self._proc.setArguments([
+            "monitor", "--session",
+            "--dest", "org.freedesktop.portal.Desktop",
+            "--object-path", "/org/freedesktop/portal/desktop",
+        ])
+        self._proc.readyReadStandardOutput.connect(self._on_output)
+        self._proc.start()
+
+    def _on_output(self) -> None:
+        """Parse gdbus monitor output for theme changes."""
+        data = self._proc.readAllStandardOutput().data().decode(errors="replace")
+        for line in data.splitlines():
+            if "SettingChanged" not in line:
+                continue
+            if "gtk-theme" in line or "color-scheme" in line:
+                self.theme_changed.emit(cfg.detect_dark_mode())
+                return
+
+    def stop(self) -> None:
+        """Stop the monitor process."""
+        if hasattr(self, "_proc") and self._proc.state() != 0:
+            self._proc.kill()
+            self._proc.waitForFinished(1000)
 
 
 def _get_system_info() -> dict[str, str]:
@@ -428,14 +463,13 @@ class MainWindow(QMainWindow):
         self._poller.start()
 
     def _start_theme_watcher(self) -> None:
-        """Poll system theme every 5 seconds and switch if changed."""
-        self._theme_timer = QTimer(self)
-        self._theme_timer.timeout.connect(self._check_theme)
-        self._theme_timer.start(5000)
+        """Listen for system theme changes via DBus freedesktop portal."""
+        self._theme_watcher = _ThemeWatcher(self)
+        self._theme_watcher.theme_changed.connect(self._on_theme_changed)
+        self._theme_watcher.start()
 
-    def _check_theme(self) -> None:
-        """Detect theme change and re-apply styles."""
-        is_dark = cfg.detect_dark_mode()
+    def _on_theme_changed(self, is_dark: bool) -> None:
+        """Handle system theme change."""
         if is_dark == self._is_dark:
             return
         self._is_dark = is_dark
@@ -700,6 +734,7 @@ class MainWindow(QMainWindow):
     def _quit_app(self) -> None:
         """Quit the application."""
         self._poller.stop()
+        self._theme_watcher.stop()
         shutdown_nvml()
         self._tray_icon.hide()
         from PySide6.QtWidgets import QApplication
