@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thermalcore"
-version = "1.0.0"
+version = "2.0.0"
 description = "Real-time CPU and GPU temperature monitor for Linux"
 readme = "README.md"
 license = "MIT"
@@ -28,7 +28,7 @@ classifiers = [
 dependencies = [
     "PySide6>=6.5",
     "psutil>=5.9",
-    "pyqtgraph>=0.13",
+    "nvidia-ml-py>=12.0",
 ]
 
 [project.urls]

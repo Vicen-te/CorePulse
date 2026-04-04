@@ -2,6 +2,7 @@
 
 from sensors.cpu_sensor import CpuCoreSensor, CpuSensorFallback, discover_cpu_sensors
 from sensors.gpu_sensor import NvidiaGpuSensor, AmdGpuSensor, discover_gpu_sensors
+from sensors.poller import SensorPoller, SensorReading
 
 __all__ = [
     "CpuCoreSensor",
@@ -10,4 +11,6 @@ __all__ = [
     "AmdGpuSensor",
     "discover_cpu_sensors",
     "discover_gpu_sensors",
+    "SensorPoller",
+    "SensorReading",
 ]

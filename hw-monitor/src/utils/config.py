@@ -33,6 +33,3 @@ COLOR_TEMP_WARM: str = "#ffd600"
 COLOR_TEMP_HOT: str = "#ff6d00"
 COLOR_TEMP_CRITICAL: str = "#e94560"
 
-# --- Chart ---
-CHART_HISTORY_SECONDS: int = 120
-CHART_LINE_WIDTH: int = 2

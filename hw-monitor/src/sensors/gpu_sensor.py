@@ -1,63 +1,100 @@
 """
 GPU temperature sensor reader.
 
-Supports NVIDIA GPUs via nvidia-smi and AMD GPUs via sysfs hwmon.
-If no GPU is detected, is_available() returns False gracefully.
+Supports NVIDIA GPUs via pynvml (NVML C library bindings) and
+AMD GPUs via sysfs hwmon. If no GPU is detected, is_available()
+returns False gracefully.
 """
 
 # Standard library
 import glob
-import subprocess
 from pathlib import Path
 
 # Local
 from sensors.base_sensor import BaseSensor
 
+# Try to import pynvml for NVIDIA support
+try:
+    import pynvml
+    _NVML_AVAILABLE = True
+except ImportError:
+    _NVML_AVAILABLE = False
+
+_nvml_initialized: bool = False
+
+
+def _ensure_nvml() -> bool:
+    """
+    Initialize NVML if not already done.
+
+    Returns:
+        True if NVML is ready to use, False otherwise.
+    """
+    global _nvml_initialized
+    if _nvml_initialized:
+        return True
+    if not _NVML_AVAILABLE:
+        return False
+    try:
+        pynvml.nvmlInit()
+        _nvml_initialized = True
+        return True
+    except pynvml.NVMLError:
+        return False
+
+
+def shutdown_nvml() -> None:
+    """Shut down NVML cleanly. Call on application exit."""
+    global _nvml_initialized
+    if _nvml_initialized:
+        try:
+            pynvml.nvmlShutdown()
+        except pynvml.NVMLError:
+            pass
+        _nvml_initialized = False
+
 
 class NvidiaGpuSensor(BaseSensor):
     """
-    Reads NVIDIA GPU temperature using nvidia-smi.
+    Reads NVIDIA GPU temperature using pynvml (NVML C library).
 
-    Queries the GPU at a specific index for its current temperature.
-    Handles missing nvidia-smi or driver errors gracefully.
+    Direct library calls instead of subprocess, typically <1ms per read.
 
     Attributes:
         gpu_index: Zero-based index of the NVIDIA GPU.
-        gpu_name: Model name reported by nvidia-smi.
+        gpu_name: Model name reported by NVML.
     """
 
     def __init__(self, gpu_index: int, gpu_name: str) -> None:
         """Initialize an NVIDIA GPU sensor.
 
         Args:
-            gpu_index: Zero-based GPU index for nvidia-smi queries.
+            gpu_index: Zero-based GPU index.
             gpu_name: Human-readable GPU model name.
         """
         self._gpu_index = gpu_index
         self._gpu_name = gpu_name
+        self._handle = None
         self._available = True
+
+        try:
+            self._handle = pynvml.nvmlDeviceGetHandleByIndex(gpu_index)
+        except pynvml.NVMLError:
+            self._available = False
 
     def get_temperature(self) -> float:
         """Return the current GPU temperature in Celsius.
 
         Returns:
-            Temperature reading, or 0.0 if nvidia-smi fails.
+            Temperature reading, or 0.0 if NVML fails.
         """
+        if self._handle is None:
+            return 0.0
         try:
-            output = subprocess.check_output(
-                [
-                    "nvidia-smi",
-                    f"--id={self._gpu_index}",
-                    "--query-gpu=temperature.gpu",
-                    "--format=csv,noheader,nounits",
-                ],
-                text=True,
-                timeout=5,
-                stderr=subprocess.DEVNULL,
-            ).strip()
-            return float(output)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired,
-                FileNotFoundError, ValueError):
+            return float(pynvml.nvmlDeviceGetTemperature(
+                self._handle, pynvml.NVML_TEMPERATURE_GPU
+            ))
+        except pynvml.NVMLError:
             return 0.0
 
     def get_name(self) -> str:
@@ -114,36 +151,27 @@ class AmdGpuSensor(BaseSensor):
 
 def _discover_nvidia_gpus() -> list[BaseSensor]:
     """
-    Discover NVIDIA GPUs via nvidia-smi.
+    Discover NVIDIA GPUs via pynvml.
 
     Returns:
         A list of NvidiaGpuSensor instances, one per detected GPU.
     """
     sensors: list[BaseSensor] = []
-    try:
-        output = subprocess.check_output(
-            [
-                "nvidia-smi",
-                "--query-gpu=index,name",
-                "--format=csv,noheader",
-            ],
-            text=True,
-            timeout=5,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (FileNotFoundError, subprocess.CalledProcessError,
-            subprocess.TimeoutExpired):
+    if not _ensure_nvml():
         return sensors
 
-    for line in output.splitlines():
-        parts = line.split(",", 1)
-        if len(parts) == 2:
-            try:
-                gpu_index = int(parts[0].strip())
-                gpu_name = parts[1].strip()
-                sensors.append(NvidiaGpuSensor(gpu_index, gpu_name))
-            except ValueError:
-                continue
+    try:
+        count = pynvml.nvmlDeviceGetCount()
+    except pynvml.NVMLError:
+        return sensors
+
+    for i in range(count):
+        try:
+            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+            name = pynvml.nvmlDeviceGetName(handle)
+            sensors.append(NvidiaGpuSensor(i, name))
+        except pynvml.NVMLError:
+            continue
 
     return sensors
 
@@ -158,7 +186,6 @@ def _discover_amd_gpus() -> list[BaseSensor]:
     sensors: list[BaseSensor] = []
     paths = sorted(glob.glob("/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input"))
     for temp_path in paths:
-        # Extract card name from path (e.g. "card0")
         parts = Path(temp_path).parts
         card_name = parts[4] if len(parts) > 4 else "Unknown"
         sensor = AmdGpuSensor(temp_path, card_name)

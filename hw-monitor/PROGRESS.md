@@ -1,7 +1,7 @@
 # Project Progress
 
-## Status: IN PROGRESS — v2 Restructuring
-## Last Commit: chore: add .python-version for pyenv (3.12.12)
+## Status: COMPLETED
+## Last Commit: refactor: v2 HWMonitor-style tree view with optimized polling
 ## Last Updated: 2026-04-04
 
 ---
@@ -19,27 +19,16 @@
 
 ---
 
-### v2 Restructuring — HWMonitor-style UI + Performance
+### v2 Restructuring — HWMonitor-style UI + Performance (completed 2026-04-04)
 
-#### Completed
-
-_(none)_
-
-#### In Progress
-
-- [ ] R1: Rewrite GPU sensor to avoid subprocess per poll
-
-#### Pending
-
-- [ ] R2: Move sensor polling to a background thread
-- [ ] R3: Replace entire UI with QTreeWidget (HWMonitor-style)
-- [ ] R4: Remove pyqtgraph, chart_widget, sensor_widget, sparklines
-- [ ] R5: Add system tray, alerts, CSV export to new UI
-- [ ] R6: Update config, styles, README
-- [ ] R7: Final verification and cleanup
+- [x] R1: Rewrite GPU sensor — pynvml instead of nvidia-smi subprocess
+- [x] R2: Move sensor polling to background QThread
+- [x] R3: Replace entire UI with QTreeWidget (HWMonitor-style)
+- [x] R4: Remove pyqtgraph, chart_widget, sensor_widget, sparklines
+- [x] R5: System tray, alerts, CSV export in new UI
+- [x] R6: Update config, styles, README, requirements
+- [x] R7: Final verification and cleanup
 
 ### Known Issues
 
-- nvidia-smi subprocess blocks UI thread ~100-500ms every poll cycle
-- pyqtgraph + sparklines cause unnecessary rendering overhead
-- UI does not resemble CPUID HWMonitor (tree view with expandable sections)
+_(none)_
