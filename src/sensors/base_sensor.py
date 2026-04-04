@@ -29,7 +29,7 @@ SENSOR_FORMATS: dict[SensorType, tuple[str, str]] = {
     SensorType.VOLTAGE: ("{:.3f}", " V"),
     SensorType.CLOCK: ("{:.0f}", " MHz"),
     SensorType.LOAD: ("{:.1f}", " %"),
-    SensorType.FAN: ("{:.0f}", " RPM"),
+    SensorType.FAN: ("{:.0f}", " %"),
     SensorType.POWER: ("{:.1f}", " W"),
     SensorType.DATA: ("{:.1f}", " GB"),
     SensorType.THROUGHPUT: ("{:.1f}", " MB/s"),

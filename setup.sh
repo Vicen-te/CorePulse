@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Setup script for ThermalCore HW Monitor.
-# Installs system dependencies and Python packages in a virtual environment.
+# Setup script for ThermalCore.
+# Installs system dependencies, Python packages, and desktop launcher.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "=== ThermalCore HW Monitor Setup ==="
+echo "=== ThermalCore Setup ==="
 
 # Install system dependencies
 echo "[*] Installing system dependencies..."
@@ -30,7 +30,14 @@ fi
 echo "[*] Installing Python dependencies..."
 "$SCRIPT_DIR/.venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt"
 
+# Install desktop launcher
+echo "[*] Installing desktop launcher..."
+DESKTOP_DIR="$HOME/.local/share/applications"
+mkdir -p "$DESKTOP_DIR"
+sed "s|__INSTALL_DIR__|$SCRIPT_DIR|g" "$SCRIPT_DIR/thermalcore.desktop" > "$DESKTOP_DIR/thermalcore.desktop"
+chmod +x "$DESKTOP_DIR/thermalcore.desktop"
+
 echo ""
 echo "[+] Setup complete!"
-echo "    Activate:  source $SCRIPT_DIR/.venv/bin/activate"
-echo "    Run:       python $SCRIPT_DIR/src/main.py"
+echo "    Run from terminal:  source $SCRIPT_DIR/.venv/bin/activate && python $SCRIPT_DIR/src/main.py"
+echo "    Run from launcher:  Search 'ThermalCore' in your app menu"

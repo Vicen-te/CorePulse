@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: COMPLETED
-## Last Commit: fix: GPU detection, window behavior, sensor filtering, tree UX
+## Last Commit: feat: per-metric alerts, desktop integration, fan fix
 ## Last Updated: 2026-04-05
 
 ---
@@ -64,6 +64,18 @@
 - [x] Add visible expand/collapse arrow icons to tree nodes
 - [x] GPU Power now working (30+ W on RTX 4070 Ti SUPER)
 
+### v2.5 — Per-Metric Alerts & Desktop Integration (completed 2026-04-05)
+
+- [x] Per-metric alerts: new Alert column, double-click to set threshold per sensor
+- [x] Desktop notification when any sensor exceeds its configured threshold
+- [x] Removed global alert spinbox (replaced by per-sensor config)
+- [x] GPU Fan sensor type changed from LOAD to FAN (0% displayed correctly for idle fans)
+- [x] Min/Max tracking now works for LOAD/FAN sensors at 0 values
+- [x] Desktop integration: .desktop file installs to ~/.local/share/applications/
+- [x] setup.sh installs desktop launcher automatically
+- [x] Fixed README screenshot layout alignment with Alert column
+
 ### Known Issues
 
 - CPU Power (Intel RAPL) requires root access to read `/sys/class/powercap/intel-rapl:0/energy_uj`. Run with `sudo` or add read permissions to see CPU package power.
+- GPU Fan shows 0% when GPU is idle — this is correct behavior (0-RPM fan mode on modern NVIDIA GPUs). Fans spin up under load.

@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
     QMenu,
     QFileDialog,
-    QSpinBox,
     QHeaderView,
 )
 from PySide6.QtCore import Qt
@@ -40,7 +39,6 @@ from utils.config import (
     TEMP_THRESHOLD_LOW,
     TEMP_THRESHOLD_MEDIUM,
     TEMP_THRESHOLD_HIGH,
-    CRITICAL_TEMP_THRESHOLD,
     COLOR_TEMP_COOL,
     COLOR_TEMP_WARM,
     COLOR_TEMP_HOT,
@@ -52,7 +50,7 @@ from utils.config import (
     COLOR_BACKGROUND,
     COLOR_WARNING,
 )
-from sensors.base_sensor import BaseSensor, SensorType, format_value
+from sensors.base_sensor import BaseSensor, SensorType, SENSOR_FORMATS, format_value
 from sensors.cpu_sensor import discover_cpu_sensors
 from sensors.gpu_sensor import discover_gpu_sensors, shutdown_nvml
 from sensors.system_sensor import discover_memory_sensors, discover_storage_sensors
@@ -181,8 +179,8 @@ class MainWindow(QMainWindow):
         self._active_sensors: set[str] = set()
         self._poll_count: int = 0
         self._temperature_log: list[dict[str, object]] = []
-        self._alert_threshold: int = CRITICAL_TEMP_THRESHOLD
-        self._alert_active: bool = False
+        self._alert_thresholds: dict[str, float] = {}
+        self._triggered_alerts: set[str] = set()
         self._sys_info = _get_system_info()
 
         self._app_icon = _create_app_icon()
@@ -253,8 +251,8 @@ class MainWindow(QMainWindow):
     def _setup_tree(self, parent: QVBoxLayout) -> None:
         """Create and populate the QTreeWidget."""
         self._tree = QTreeWidget()
-        self._tree.setHeaderLabels(["Sensor", "Value", "Min", "Max"])
-        self._tree.setColumnCount(4)
+        self._tree.setHeaderLabels(["Sensor", "Value", "Min", "Max", "Alert"])
+        self._tree.setColumnCount(5)
         self._tree.setRootIsDecorated(True)
         self._tree.setAnimated(False)
         self._tree.setIndentation(20)
@@ -267,9 +265,11 @@ class MainWindow(QMainWindow):
         hdr = self._tree.header()
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for col in (1, 2, 3):
+        for col in (1, 2, 3, 4):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self._tree.setColumnWidth(col, 110)
+
+        self._tree.itemDoubleClicked.connect(self._on_item_double_clicked)
 
         closed_icon, open_icon = _create_branch_icons()
 
@@ -354,7 +354,7 @@ class MainWindow(QMainWindow):
 
             # Hardware display name with model info
             hw_display = self._hw_display_name(hw_name)
-            hw_item = QTreeWidgetItem(self._tree, [hw_display, "", "", ""])
+            hw_item = QTreeWidgetItem(self._tree, [hw_display, "", "", "", ""])
             hw_item.setFont(0, bold)
             hw_item.setFlags(hw_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             hw_item.setExpanded(True)
@@ -363,7 +363,7 @@ class MainWindow(QMainWindow):
                 if not sensors:
                     continue
 
-                type_item = QTreeWidgetItem(hw_item, [type_name, "", "", ""])
+                type_item = QTreeWidgetItem(hw_item, [type_name, "", "", "", ""])
                 type_item.setFont(0, type_font)
                 type_item.setForeground(0, secondary_brush)
                 type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
@@ -371,8 +371,8 @@ class MainWindow(QMainWindow):
 
                 for sensor in sensors:
                     key = f"{hw_name}|{type_name}|{sensor.get_name()}"
-                    item = QTreeWidgetItem(type_item, [sensor.get_name(), "--", "--", "--"])
-                    for col in (1, 2, 3):
+                    item = QTreeWidgetItem(type_item, [sensor.get_name(), "--", "--", "--", ""])
+                    for col in (1, 2, 3, 4):
                         item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                     self._sensor_items[key] = item
                     self._sensor_map[key] = sensor
@@ -394,7 +394,7 @@ class MainWindow(QMainWindow):
         return hw_name
 
     def _setup_bottom_bar(self, parent: QVBoxLayout) -> None:
-        """Create the bottom bar with alert threshold and export."""
+        """Create the bottom bar with export button."""
         bar = QFrame()
         bar.setStyleSheet(
             f"background-color: {COLOR_PANEL}; border-top: 1px solid {COLOR_ACCENT};"
@@ -405,21 +405,9 @@ class MainWindow(QMainWindow):
         bl.setContentsMargins(10, 2, 10, 2)
         bl.setSpacing(6)
 
-        alert_lbl = QLabel("Alert:")
-        alert_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
-        bl.addWidget(alert_lbl)
-
-        self._threshold_spin = QSpinBox()
-        self._threshold_spin.setRange(30, 120)
-        self._threshold_spin.setValue(self._alert_threshold)
-        self._threshold_spin.setSuffix("°C")
-        self._threshold_spin.setFixedWidth(80)
-        self._threshold_spin.setStyleSheet(
-            f"background-color: {COLOR_BACKGROUND}; color: {COLOR_TEXT_PRIMARY}; "
-            f"border: 1px solid {COLOR_ACCENT}; border-radius: 3px; padding: 2px 6px;"
-        )
-        self._threshold_spin.valueChanged.connect(self._on_threshold_changed)
-        bl.addWidget(self._threshold_spin)
+        hint_lbl = QLabel("Double-click Alert column to set threshold")
+        hint_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
+        bl.addWidget(hint_lbl)
 
         bl.addStretch()
 
@@ -461,7 +449,7 @@ class MainWindow(QMainWindow):
             if item is None:
                 continue
 
-            has_data = reading.current > 0 or reading.sensor_type == SensorType.LOAD
+            has_data = reading.current > 0 or reading.sensor_type in (SensorType.LOAD, SensorType.FAN)
             if has_data:
                 self._active_sensors.add(key)
 
@@ -500,7 +488,7 @@ class MainWindow(QMainWindow):
             self._temperature_log.append(log_entry)
 
         self._tray_icon.setToolTip(f"ThermalCore — {hottest_name}: {hottest_temp:.0f}°C")
-        self._check_alerts(hottest_temp, hottest_name)
+        self._check_alerts(readings)
 
     def _hide_inactive_sensors(self) -> None:
         """Hide sensors that never reported data and empty type groups."""
@@ -526,25 +514,83 @@ class MainWindow(QMainWindow):
             if not hw_has_visible:
                 hw_item.setHidden(True)
 
-    # --- Alerts ---
+    # --- Per-metric alerts ---
 
-    def _check_alerts(self, hottest_temp: float, hottest_name: str) -> None:
-        """Check alert threshold."""
-        if hottest_temp >= self._alert_threshold:
-            if not self._alert_active:
-                self._alert_active = True
-                self._tray_icon.showMessage(
-                    "Temperature Alert!",
-                    f"{hottest_name} reached {hottest_temp:.1f}°C "
-                    f"(threshold: {self._alert_threshold}°C)",
-                    QSystemTrayIcon.MessageIcon.Critical, 5000,
-                )
-        else:
-            self._alert_active = False
+    def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
+        """Handle double-click on Alert column to set/clear threshold."""
+        if column != 4:
+            return
 
-    def _on_threshold_changed(self, value: int) -> None:
-        """Update alert threshold."""
-        self._alert_threshold = value
+        # Find the sensor key for this item
+        key = None
+        for k, v in self._sensor_items.items():
+            if v is item:
+                key = k
+                break
+        if key is None:
+            return
+
+        from PySide6.QtWidgets import QInputDialog
+        sensor_obj = self._sensor_map.get(key)
+        if sensor_obj is None:
+            return
+
+        st = sensor_obj.get_sensor_type()
+        _, unit = SENSOR_FORMATS.get(st, ("{:.1f}", ""))
+        current = self._alert_thresholds.get(key)
+        label = f"Alert threshold for {sensor_obj.get_name()} ({unit.strip()}):"
+
+        if current is not None:
+            label += f"\nCurrent: {current}{unit}\n(Enter 0 to clear)"
+
+        value, ok = QInputDialog.getDouble(
+            self, "Set Alert", label,
+            current if current is not None else 0.0,
+            0, 100000, 1,
+        )
+        if not ok:
+            return
+
+        if value == 0 and current is not None:
+            del self._alert_thresholds[key]
+            self._triggered_alerts.discard(key)
+            item.setText(4, "")
+            item.setForeground(4, QBrush(QColor(COLOR_TEXT_PRIMARY)))
+        elif value > 0:
+            self._alert_thresholds[key] = value
+            fmt, unit = SENSOR_FORMATS.get(st, ("{:.1f}", ""))
+            item.setText(4, fmt.format(value) + unit)
+            item.setForeground(4, QBrush(QColor(COLOR_TEXT_SECONDARY)))
+
+    def _check_alerts(self, readings: dict[str, "SensorReading"]) -> None:
+        """Check per-sensor alert thresholds."""
+        for key, threshold in self._alert_thresholds.items():
+            reading = readings.get(key)
+            if reading is None:
+                continue
+
+            if reading.current >= threshold:
+                if key not in self._triggered_alerts:
+                    self._triggered_alerts.add(key)
+                    sensor_name = reading.name.split("|")[-1] if "|" in reading.name else reading.name
+                    st = reading.sensor_type
+                    fmt, unit = SENSOR_FORMATS.get(st, ("{:.1f}", ""))
+                    val_str = fmt.format(reading.current) + unit
+                    thr_str = fmt.format(threshold) + unit
+                    self._tray_icon.showMessage(
+                        "Alert!",
+                        f"{sensor_name}: {val_str} (threshold: {thr_str})",
+                        QSystemTrayIcon.MessageIcon.Critical, 5000,
+                    )
+                # Color the alert cell red when exceeded
+                item = self._sensor_items.get(key)
+                if item:
+                    item.setForeground(4, QBrush(QColor(COLOR_WARNING)))
+            else:
+                self._triggered_alerts.discard(key)
+                item = self._sensor_items.get(key)
+                if item and key in self._alert_thresholds:
+                    item.setForeground(4, QBrush(QColor(COLOR_TEXT_SECONDARY)))
 
     # --- CSV export ---
 

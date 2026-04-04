@@ -37,7 +37,8 @@ class SensorReading:
     def update(self, value: float) -> None:
         """Update the reading with a new value."""
         self.current = value
-        if value > 0:
+        track_zero = self.sensor_type in (SensorType.LOAD, SensorType.FAN)
+        if value > 0 or (value == 0 and track_zero):
             if value < self.min_val:
                 self.min_val = value
             if value > self.max_val:

@@ -210,7 +210,7 @@ class NvidiaGpuFanSensor(_NvidiaBaseSensor):
 
     def get_sensor_type(self) -> SensorType:
         """Return type."""
-        return SensorType.LOAD  # percentage, like LibreHWMonitor "Control"
+        return SensorType.FAN
 
     def get_type_group(self) -> str:
         """Return type group."""
