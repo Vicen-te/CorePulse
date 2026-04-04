@@ -97,7 +97,7 @@ Or search **ThermalCore** in your app launcher (after running `setup.sh`).
 - **Double-click** the Alert column to set a threshold per sensor
 - Temperatures are color-coded: green (<50°C), yellow (50-70), orange (70-85), red (>85)
 - **Export CSV** saves all recorded data
-- CPU Power (RAPL): run `setup.sh` to enable, or `sudo chmod o+r /sys/class/powercap/intel-rapl:0/energy_uj`
+- CPU Power (RAPL): `setup.sh` configures persistent permissions (survives reboots)
 
 ## Project structure
 

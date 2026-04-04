@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: COMPLETED
-## Last Commit: feat: auto dark/light theme, RAPL permissions in setup
+## Last Commit: fix: persistent RAPL permissions via udev rule
 ## Last Updated: 2026-04-05
 
 ---
@@ -89,7 +89,13 @@
 - [x] Defaults to dark if detection fails
 - [x] setup.sh enables RAPL read permissions for CPU power monitoring
 
+### v2.8 — Persistent Setup (completed 2026-04-05)
+
+- [x] RAPL permissions persist across reboots via udev rule (99-thermalcore-rapl.rules)
+- [x] setup.sh is run-once: detects if already configured
+
 ### Known Issues
 
-- CPU Power (Intel RAPL) shows 0.0 W without read permissions. Run `setup.sh` or `sudo chmod o+r /sys/class/powercap/intel-rapl:0/energy_uj` (resets on reboot).
+- CPU Fan RPM: not available on this board (no nct6775/it87 sensor chip loaded). Only ACPI on/off state exposed.
+- RAM Temperature: not available (no DIMM/SPD temp sensors on this motherboard).
 - GPU Fan shows 0% when GPU is idle — correct behavior (0-RPM fan mode). Fans spin up under load.
