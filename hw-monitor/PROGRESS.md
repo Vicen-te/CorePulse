@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: IN PROGRESS
-## Last Commit: feat(chart): add real-time temperature chart with scrolling history
+## Last Commit: feat(ui): add system tray, alerts, data export, and system info
 ## Last Updated: 2026-04-04
 
 ### Completed
@@ -11,13 +11,13 @@
 - [x] Step 2: Main window with dark theme (2026-04-04)
 - [x] Step 3: Sensor display widgets with live updates (2026-04-04)
 - [x] Step 4: Real-time temperature charts (2026-04-04)
+- [x] Step 5: System tray, alerts, CSV export, system info (2026-04-04)
 
 ### In Progress
 
-- [ ] Step 5: System tray, alerts, CSV export, system info
+- [ ] Step 6: README and documentation
 
 ### Pending
-- [ ] Step 6: README and documentation
 - [ ] Step 7: Packaging and desktop integration
 
 ### Known Issues
