@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: COMPLETED
-## Last Commit: feat: per-metric alerts, desktop integration, fan fix
+## Last Commit: feat: auto dark/light theme, RAPL permissions in setup
 ## Last Updated: 2026-04-05
 
 ---
@@ -82,7 +82,14 @@
 - [x] Physical core → logical CPU mapping read from /proc/cpuinfo
 - [x] CPU Power section always visible (shows 0.0 W without root)
 
+### v2.7 — Auto Dark/Light Theme (completed 2026-04-05)
+
+- [x] Auto-detect system theme (GNOME gsettings: color-scheme and gtk-theme)
+- [x] Light theme colors for light system preference
+- [x] Defaults to dark if detection fails
+- [x] setup.sh enables RAPL read permissions for CPU power monitoring
+
 ### Known Issues
 
-- CPU Power (Intel RAPL) shows 0.0 W without root. Run with `sudo` or `sudo chmod o+r /sys/class/powercap/intel-rapl:0/energy_uj` for real values.
+- CPU Power (Intel RAPL) shows 0.0 W without read permissions. Run `setup.sh` or `sudo chmod o+r /sys/class/powercap/intel-rapl:0/energy_uj` (resets on reboot).
 - GPU Fan shows 0% when GPU is idle — correct behavior (0-RPM fan mode). Fans spin up under load.

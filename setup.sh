@@ -30,6 +30,13 @@ fi
 echo "[*] Installing Python dependencies..."
 "$SCRIPT_DIR/.venv/bin/pip" install -r "$SCRIPT_DIR/requirements.txt"
 
+# Enable CPU power monitoring (Intel RAPL) for non-root users
+RAPL_PATH="/sys/class/powercap/intel-rapl:0/energy_uj"
+if [ -f "$RAPL_PATH" ]; then
+    echo "[*] Enabling CPU power monitoring (RAPL)..."
+    sudo chmod o+r "$RAPL_PATH"
+fi
+
 # Install desktop launcher
 echo "[*] Installing desktop launcher..."
 DESKTOP_DIR="$HOME/.local/share/applications"

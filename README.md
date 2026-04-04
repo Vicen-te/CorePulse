@@ -15,7 +15,7 @@ A lightweight hardware monitoring application for Linux. Features a tree view wi
 - **Storage**: NVMe temperatures, free disk space per partition (free / total GB)
 - **Background polling** — zero UI blocking via QThread
 - **NVIDIA via pynvml** — direct NVML library calls (<0.01ms per read)
-- **Dark theme** with color-coded temperatures
+- **Auto dark/light theme** — follows system preference, color-coded temperatures
 - **System tray** — tooltip with hottest temp
 - **CSV export** — save all sensor data with timestamps
 - **Desktop integration** — appears in app launcher alongside other apps
@@ -97,7 +97,7 @@ Or search **ThermalCore** in your app launcher (after running `setup.sh`).
 - **Double-click** the Alert column to set a threshold per sensor
 - Temperatures are color-coded: green (<50°C), yellow (50-70), orange (70-85), red (>85)
 - **Export CSV** saves all recorded data
-- CPU Power (RAPL) requires root: `sudo python src/main.py`
+- CPU Power (RAPL): run `setup.sh` to enable, or `sudo chmod o+r /sys/class/powercap/intel-rapl:0/energy_uj`
 
 ## Project structure
 

@@ -1,7 +1,7 @@
 """
-QSS dark theme stylesheet for ThermalCore v2.
+QSS theme stylesheet for ThermalCore.
 
-Minimal dark theme for the QTreeWidget-based interface.
+Colors adapt automatically to the system dark/light preference.
 """
 
 # Local
@@ -13,7 +13,7 @@ from utils.config import (
     COLOR_TEXT_SECONDARY,
 )
 
-DARK_THEME_QSS: str = f"""
+THEME_QSS: str = f"""
 QWidget {{
     background-color: {COLOR_BACKGROUND};
     color: {COLOR_TEXT_PRIMARY};

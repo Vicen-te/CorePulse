@@ -12,7 +12,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 
 # Local
-from ui.styles import DARK_THEME_QSS
+from ui.styles import THEME_QSS
 from ui.main_window import MainWindow
 
 
@@ -26,7 +26,7 @@ def create_app() -> tuple[QApplication, MainWindow]:
     app = QApplication(sys.argv)
     app.setApplicationName("ThermalCore")
     app.setOrganizationName("ThermalCore")
-    app.setStyleSheet(DARK_THEME_QSS)
+    app.setStyleSheet(THEME_QSS)
 
     window = MainWindow()
     window.show()
