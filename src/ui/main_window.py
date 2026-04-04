@@ -1,8 +1,7 @@
 """
 Main window layout for ThermalCore.
 
-LibreHardwareMonitor-style tree view with 3-level hierarchy:
-Hardware → Sensor Type → Individual Sensor.
+Tree view with 3-level hierarchy: Hardware → Sensor Type → Individual Sensor.
 """
 
 # Standard library
@@ -126,7 +125,7 @@ def _create_app_icon() -> QIcon:
 
 class MainWindow(QMainWindow):
     """
-    LibreHardwareMonitor-style main window.
+    Main window with hardware monitoring tree view.
 
     3-level QTreeWidget: Hardware → Sensor Type → Sensor.
     Background thread polls; UI only updates text.

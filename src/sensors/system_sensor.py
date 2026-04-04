@@ -1,8 +1,7 @@
 """
 System-level sensors: memory, storage, and NVMe temperatures.
 
-Provides memory usage, disk usage, and NVMe temperature readings
-following the LibreHardwareMonitor pattern.
+Provides memory usage, disk usage, and NVMe temperature readings.
 """
 
 # Third-party
@@ -103,28 +102,20 @@ class MemoryLoadSensor(BaseSensor):
 class DiskUsageSensor(BaseSensor):
     """Reports disk usage for a mount point as value / total GB."""
 
-    def __init__(self, mountpoint: str, report_type: str = "used") -> None:
-        """Initialize with mount point and what to report.
+    def __init__(self, mountpoint: str) -> None:
+        """Initialize with mount point.
 
         Args:
             mountpoint: Filesystem mount point (e.g. "/").
-            report_type: One of "used", "available".
         """
         self._mountpoint = mountpoint
-        self._report_type = report_type
 
     def get_temperature(self) -> float:
-        """Return disk usage value in GB."""
+        """Return used disk space in GB."""
         try:
-            usage = psutil.disk_usage(self._mountpoint)
+            return psutil.disk_usage(self._mountpoint).used / (1024 ** 3)
         except OSError:
             return 0.0
-
-        if self._report_type == "used":
-            return usage.used / (1024 ** 3)
-        elif self._report_type == "available":
-            return usage.free / (1024 ** 3)
-        return 0.0
 
     def _get_total_gb(self) -> float:
         """Return total disk size in GB."""
@@ -135,9 +126,7 @@ class DiskUsageSensor(BaseSensor):
 
     def get_name(self) -> str:
         """Return sensor name."""
-        labels = {"used": "Used Space", "available": "Available Space"}
-        name = labels.get(self._report_type, self._report_type)
-        return f"{name} ({self._mountpoint})"
+        return f"Used Space ({self._mountpoint})"
 
     def is_available(self) -> bool:
         """Check availability."""
@@ -236,7 +225,6 @@ def discover_storage_sensors() -> list[BaseSensor]:
         if any(mp.startswith(p) for p in skip_prefixes):
             continue
         seen.add(mp)
-        sensors.append(DiskUsageSensor(mp, "used"))
-        sensors.append(DiskUsageSensor(mp, "available"))
+        sensors.append(DiskUsageSensor(mp))
 
     return sensors

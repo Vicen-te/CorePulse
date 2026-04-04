@@ -2,8 +2,7 @@
 Abstract base class for hardware sensors.
 
 Defines the interface that all sensor readers must implement.
-Supports different sensor types (temperature, voltage, clock, etc.)
-following the LibreHardwareMonitor pattern.
+Supports different sensor types (temperature, voltage, clock, etc.).
 """
 
 # Standard library
