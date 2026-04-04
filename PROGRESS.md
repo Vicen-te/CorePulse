@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: COMPLETED
-## Last Commit: refactor: flatten structure, clean references, simplify storage
+## Last Commit: fix: GPU detection, window behavior, sensor filtering, tree UX
 ## Last Updated: 2026-04-05
 
 ---
@@ -47,17 +47,23 @@
 - [x] Fix CPU load: cores 1+ now show correct values (shared poll cache)
 - [x] Fix GPU header: NVML initialized before querying GPU name
 - [x] Fix NVMe temps: duplicate sensor names resolved with drive numbers
-- [x] Storage redesign: removed Load/Data, added Usage section (used/total GB)
+- [x] Storage redesign: removed Load/Data, added Usage section (free/total GB)
 - [x] Filtered snap/squashfs/tmpfs mounts from storage sensors
 
 ### v2.3 — Structure & Cleanup (completed 2026-04-05)
 
 - [x] Flatten hw-monitor/ into project root (no nested project)
-- [x] Remove redundant Available Space sensor (only Used Space remains)
 - [x] Clean all third-party product name references from code and docs
-- [x] Delete RESTRUCTURE.md
-- [x] Update CLAUDE.md, README.md, PROGRESS.md paths
+
+### v2.4 — UX & Sensor Fixes (completed 2026-04-05)
+
+- [x] Fix GPU detection: use system Python (pyenv ctypes broken, pynvml failed)
+- [x] Fix window behavior: close button now quits normally (no forced tray-only mode)
+- [x] Auto-hide sensors with no data after 3 poll cycles (and empty type groups)
+- [x] Show free space instead of used space in Storage > Usage
+- [x] Add visible expand/collapse arrow icons to tree nodes
+- [x] GPU Power now working (30+ W on RTX 4070 Ti SUPER)
 
 ### Known Issues
 
-_(none)_
+- CPU Power (Intel RAPL) requires root access to read `/sys/class/powercap/intel-rapl:0/energy_uj`. Run with `sudo` or add read permissions to see CPU package power.

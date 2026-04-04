@@ -106,6 +106,46 @@ def _get_system_info() -> dict[str, str]:
     return info
 
 
+def _create_branch_icons() -> tuple[str, str]:
+    """Create triangle arrow icons for tree branches and return temp file paths."""
+    import tempfile, os
+    arrow_size = 12
+    color = QColor(COLOR_TEXT_SECONDARY)
+
+    # Right-pointing triangle (collapsed)
+    closed_pix = QPixmap(arrow_size, arrow_size)
+    closed_pix.fill(QColor(0, 0, 0, 0))
+    p = QPainter(closed_pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setBrush(color)
+    p.setPen(Qt.PenStyle.NoPen)
+    from PySide6.QtGui import QPolygonF
+    from PySide6.QtCore import QPointF
+    p.drawPolygon(QPolygonF([
+        QPointF(3, 1), QPointF(10, 6), QPointF(3, 11),
+    ]))
+    p.end()
+
+    # Down-pointing triangle (expanded)
+    open_pix = QPixmap(arrow_size, arrow_size)
+    open_pix.fill(QColor(0, 0, 0, 0))
+    p = QPainter(open_pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setBrush(color)
+    p.setPen(Qt.PenStyle.NoPen)
+    p.drawPolygon(QPolygonF([
+        QPointF(1, 3), QPointF(11, 3), QPointF(6, 10),
+    ]))
+    p.end()
+
+    tmp_dir = tempfile.mkdtemp(prefix="thermalcore_")
+    closed_path = os.path.join(tmp_dir, "arrow_closed.png")
+    open_path = os.path.join(tmp_dir, "arrow_open.png")
+    closed_pix.save(closed_path)
+    open_pix.save(open_path)
+    return closed_path, open_path
+
+
 def _create_app_icon() -> QIcon:
     """Create a simple app icon."""
     pixmap = QPixmap(64, 64)
@@ -138,6 +178,8 @@ class MainWindow(QMainWindow):
         self._all_sensors: list[BaseSensor] = []
         self._sensor_items: dict[str, QTreeWidgetItem] = {}
         self._sensor_map: dict[str, BaseSensor] = {}
+        self._active_sensors: set[str] = set()
+        self._poll_count: int = 0
         self._temperature_log: list[dict[str, object]] = []
         self._alert_threshold: int = CRITICAL_TEMP_THRESHOLD
         self._alert_active: bool = False
@@ -229,6 +271,8 @@ class MainWindow(QMainWindow):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             self._tree.setColumnWidth(col, 110)
 
+        closed_icon, open_icon = _create_branch_icons()
+
         self._tree.setStyleSheet(f"""
             QTreeWidget {{
                 background-color: {COLOR_BACKGROUND};
@@ -245,13 +289,13 @@ class MainWindow(QMainWindow):
             QTreeWidget::branch {{
                 background-color: {COLOR_BACKGROUND};
             }}
-            QTreeWidget::branch:has-children:closed {{
-                image: none;
-                border-image: none;
+            QTreeWidget::branch:has-children:!has-siblings:closed,
+            QTreeWidget::branch:closed:has-children:has-siblings {{
+                image: url({closed_icon});
             }}
-            QTreeWidget::branch:has-children:open {{
-                image: none;
-                border-image: none;
+            QTreeWidget::branch:open:has-children:!has-siblings,
+            QTreeWidget::branch:open:has-children:has-siblings {{
+                image: url({open_icon});
             }}
             QHeaderView::section {{
                 background-color: {COLOR_PANEL};
@@ -400,6 +444,7 @@ class MainWindow(QMainWindow):
 
     def _on_readings_updated(self, readings: dict[str, SensorReading]) -> None:
         """Handle new readings from the background thread."""
+        self._poll_count += 1
         hottest_temp = 0.0
         hottest_name = ""
         log_entry: dict[str, object] = {"timestamp": datetime.now().isoformat()}
@@ -416,7 +461,11 @@ class MainWindow(QMainWindow):
             if item is None:
                 continue
 
-            if reading.current <= 0 and reading.sensor_type != SensorType.LOAD:
+            has_data = reading.current > 0 or reading.sensor_type == SensorType.LOAD
+            if has_data:
+                self._active_sensors.add(key)
+
+            if not has_data:
                 continue
 
             # Format values with proper units (use sensor's custom format if available)
@@ -439,11 +488,43 @@ class MainWindow(QMainWindow):
                 color = QColor(self._get_temp_color(reading.current))
                 item.setForeground(1, color)
 
+        # After 3 polls, hide sensors that never reported data
+        if self._poll_count == 3:
+            self._hide_inactive_sensors()
+
+        if self._poll_count == 3:
+            count = sum(1 for k in self._sensor_items if k in self._active_sensors)
+            self._status_label.setText(f"{count} sensors")
+
         if len(self._temperature_log) < _MAX_LOG_ENTRIES:
             self._temperature_log.append(log_entry)
 
         self._tray_icon.setToolTip(f"ThermalCore — {hottest_name}: {hottest_temp:.0f}°C")
         self._check_alerts(hottest_temp, hottest_name)
+
+    def _hide_inactive_sensors(self) -> None:
+        """Hide sensors that never reported data and empty type groups."""
+        for key, item in self._sensor_items.items():
+            if key not in self._active_sensors:
+                item.setHidden(True)
+
+        # Hide type group nodes with all children hidden
+        root = self._tree.invisibleRootItem()
+        for hw_idx in range(root.childCount()):
+            hw_item = root.child(hw_idx)
+            hw_has_visible = False
+            for tg_idx in range(hw_item.childCount()):
+                tg_item = hw_item.child(tg_idx)
+                visible_children = sum(
+                    1 for i in range(tg_item.childCount())
+                    if not tg_item.child(i).isHidden()
+                )
+                if visible_children == 0:
+                    tg_item.setHidden(True)
+                else:
+                    hw_has_visible = True
+            if not hw_has_visible:
+                hw_item.setHidden(True)
 
     # --- Alerts ---
 
@@ -506,13 +587,9 @@ class MainWindow(QMainWindow):
         self._tray_icon.show()
 
     def closeEvent(self, event: object) -> None:
-        """Minimize to tray on close."""
-        event.ignore()
-        self.hide()
-        self._tray_icon.showMessage(
-            "ThermalCore", "Running in system tray.",
-            QSystemTrayIcon.MessageIcon.Information, 2000,
-        )
+        """Close the application normally."""
+        self._quit_app()
+        event.accept()
 
     def _show_from_tray(self) -> None:
         """Restore window."""

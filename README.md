@@ -11,7 +11,7 @@ A lightweight hardware monitoring application for Linux. Features a tree view wi
 - **NVIDIA GPU**: temperature, core/memory clocks, GPU/memory load, VRAM usage, power draw, fan speed
 - **AMD GPU**: temperature via sysfs hwmon
 - **Memory**: usage percentage, used/available GB
-- **Storage**: NVMe temperatures, disk usage per partition (used / total GB)
+- **Storage**: NVMe temperatures, free disk space per partition (free / total GB)
 - **Background polling** — zero UI blocking via QThread
 - **NVIDIA via pynvml** — direct NVML library calls (<0.01ms per read)
 - **Dark theme** with color-coded temperatures
@@ -49,7 +49,7 @@ A lightweight hardware monitoring application for Linux. Features a tree view wi
 │   ▼ Temperatures        │        │        │              │
 │     Composite (Drive 1) │ 30.9°C │ 28.0°C │ 42.0°C     │
 │   ▼ Usage               │        │        │              │
-│     Used Space (/)      │ 44.4 / 456.3 GB │             │
+│     Free Space (/)      │ 388.9 / 456.3 GB│             │
 └─────────────────────────┴────────┴────────┴──────────────┘
 │ Alert: [85°C]                              [Export CSV]   │
 └──────────────────────────────────────────────────────────┘
@@ -86,9 +86,10 @@ python src/main.py
 
 - Click **▼/►** arrows to expand/collapse hardware sections
 - Temperatures are color-coded: green (<50°C), yellow (50-70), orange (70-85), red (>85)
-- Close window → minimizes to system tray
-- Double-click tray icon → restore window
+- Close window → quits the application
+- System tray icon shows hottest temperature
 - **Export CSV** saves all recorded data
+- CPU Power (RAPL) requires root: `sudo python src/main.py`
 
 ## Project structure
 

@@ -111,9 +111,9 @@ class DiskUsageSensor(BaseSensor):
         self._mountpoint = mountpoint
 
     def get_temperature(self) -> float:
-        """Return used disk space in GB."""
+        """Return free disk space in GB."""
         try:
-            return psutil.disk_usage(self._mountpoint).used / (1024 ** 3)
+            return psutil.disk_usage(self._mountpoint).free / (1024 ** 3)
         except OSError:
             return 0.0
 
@@ -126,7 +126,7 @@ class DiskUsageSensor(BaseSensor):
 
     def get_name(self) -> str:
         """Return sensor name."""
-        return f"Used Space ({self._mountpoint})"
+        return f"Free Space ({self._mountpoint})"
 
     def is_available(self) -> bool:
         """Check availability."""

@@ -11,7 +11,7 @@ echo "=== ThermalCore HW Monitor Setup ==="
 # Install system dependencies
 echo "[*] Installing system dependencies..."
 sudo apt-get update
-sudo apt-get install -y lm-sensors libxcb-cursor0
+sudo apt-get install -y lm-sensors libxcb-cursor0 python3-venv
 
 if ! command -v sensors &> /dev/null; then
     echo "[*] Detecting sensors..."
@@ -23,7 +23,7 @@ fi
 # Create virtual environment if it doesn't exist
 if [ ! -d "$SCRIPT_DIR/.venv" ]; then
     echo "[*] Creating virtual environment..."
-    python3 -m venv "$SCRIPT_DIR/.venv"
+    /usr/bin/python3 -m venv "$SCRIPT_DIR/.venv"
 fi
 
 # Install Python dependencies
