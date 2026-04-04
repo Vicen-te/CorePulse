@@ -320,7 +320,7 @@ def discover_cpu_sensors() -> list[BaseSensor]:
     psutil.cpu_percent(interval=None, percpu=True)
 
     sensors.append(CpuTotalLoadSensor())
-    core_count = psutil.cpu_count(logical=True) or 0
+    core_count = psutil.cpu_count(logical=False) or psutil.cpu_count(logical=True) or 0
     for i in range(core_count):
         sensors.append(CpuCoreLoadSensor(i))
 
