@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QSplitter,
     QStatusBar,
-    QFrame,
     QScrollArea,
 )
 from PySide6.QtCore import Qt, QTimer
@@ -45,6 +44,7 @@ from sensors.base_sensor import BaseSensor
 from sensors.cpu_sensor import discover_cpu_sensors
 from sensors.gpu_sensor import discover_gpu_sensors
 from ui.sensor_widget import SensorWidget
+from ui.chart_widget import ChartWidget
 
 
 class MainWindow(QMainWindow):
@@ -178,20 +178,10 @@ class MainWindow(QMainWindow):
         )
         detail_layout.addWidget(self._detail_stats_label)
 
-        # Chart placeholder area — will be replaced in Step 4
-        self._chart_container = QFrame()
-        self._chart_container.setProperty("class", "sensor-card")
-        self._chart_container.setStyleSheet(
-            f"background-color: {COLOR_PANEL}; border-radius: 8px;"
-        )
-        chart_layout = QVBoxLayout(self._chart_container)
-        self._chart_placeholder_label = QLabel("Chart will appear here (Step 4)")
-        self._chart_placeholder_label.setStyleSheet(
-            f"color: {COLOR_TEXT_SECONDARY}; background: transparent;"
-        )
-        self._chart_placeholder_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        chart_layout.addWidget(self._chart_placeholder_label)
-        detail_layout.addWidget(self._chart_container, stretch=1)
+        # --- Real-time chart ---
+        self._chart = ChartWidget()
+        self._chart.set_sensors(self._sensors)
+        detail_layout.addWidget(self._chart, stretch=1)
 
         splitter.addWidget(self._detail_panel)
         splitter.setSizes([280, 720])
@@ -231,12 +221,14 @@ class MainWindow(QMainWindow):
             f"background-color: {COLOR_ACCENT}; border-radius: 8px;"
         )
         self._detail_name_label.setText(widget.sensor.get_name())
+        self._chart.highlight_sensor(widget.sensor.get_name())
         self._update_detail_display()
 
     def _update_readings(self) -> None:
-        """Poll all sensors and update widgets."""
+        """Poll all sensors, update widgets, and refresh the chart."""
         for widget in self._sensor_widgets:
             widget.update_reading()
+        self._chart.update_data()
         self._update_detail_display()
 
     def _update_detail_display(self) -> None:
