@@ -1,9 +1,8 @@
 """
-GPU temperature sensor reader.
+GPU sensor readers.
 
-Supports NVIDIA GPUs via pynvml (NVML C library bindings) and
-AMD GPUs via sysfs hwmon. If no GPU is detected, is_available()
-returns False gracefully.
+Supports NVIDIA GPUs via pynvml with temperature, clock, load, VRAM,
+power, and fan speed. AMD GPUs via sysfs hwmon (temperature only).
 """
 
 # Standard library
@@ -11,9 +10,8 @@ import glob
 from pathlib import Path
 
 # Local
-from sensors.base_sensor import BaseSensor
+from sensors.base_sensor import BaseSensor, SensorType
 
-# Try to import pynvml for NVIDIA support
 try:
     import pynvml
     _NVML_AVAILABLE = True
@@ -24,12 +22,7 @@ _nvml_initialized: bool = False
 
 
 def _ensure_nvml() -> bool:
-    """
-    Initialize NVML if not already done.
-
-    Returns:
-        True if NVML is ready to use, False otherwise.
-    """
+    """Initialize NVML if not already done."""
     global _nvml_initialized
     if _nvml_initialized:
         return True
@@ -54,108 +47,207 @@ def shutdown_nvml() -> None:
         _nvml_initialized = False
 
 
-class NvidiaGpuSensor(BaseSensor):
-    """
-    Reads NVIDIA GPU temperature using pynvml (NVML C library).
+class _NvidiaBaseSensor(BaseSensor):
+    """Base class for all NVIDIA GPU sensors sharing a device handle."""
 
-    Direct library calls instead of subprocess, typically <1ms per read.
-
-    Attributes:
-        gpu_index: Zero-based index of the NVIDIA GPU.
-        gpu_name: Model name reported by NVML.
-    """
-
-    def __init__(self, gpu_index: int, gpu_name: str) -> None:
-        """Initialize an NVIDIA GPU sensor.
-
-        Args:
-            gpu_index: Zero-based GPU index.
-            gpu_name: Human-readable GPU model name.
-        """
-        self._gpu_index = gpu_index
+    def __init__(self, handle: object, gpu_name: str) -> None:
+        """Initialize with NVML device handle."""
+        self._handle = handle
         self._gpu_name = gpu_name
-        self._handle = None
-        self._available = True
 
-        try:
-            self._handle = pynvml.nvmlDeviceGetHandleByIndex(gpu_index)
-        except pynvml.NVMLError:
-            self._available = False
+    def is_available(self) -> bool:
+        """Check availability."""
+        return self._handle is not None
+
+    def get_hardware_group(self) -> str:
+        """Return GPU hardware group."""
+        return "GPU"
+
+
+class NvidiaGpuTempSensor(_NvidiaBaseSensor):
+    """NVIDIA GPU core temperature."""
 
     def get_temperature(self) -> float:
-        """Return the current GPU temperature in Celsius.
-
-        Returns:
-            Temperature reading, or 0.0 if NVML fails.
-        """
-        if self._handle is None:
-            return 0.0
+        """Return GPU temperature in Celsius."""
         try:
-            return float(pynvml.nvmlDeviceGetTemperature(
-                self._handle, pynvml.NVML_TEMPERATURE_GPU
-            ))
+            return float(pynvml.nvmlDeviceGetTemperature(self._handle, pynvml.NVML_TEMPERATURE_GPU))
         except pynvml.NVMLError:
             return 0.0
 
     def get_name(self) -> str:
-        """Return the human-readable GPU name."""
-        return f"GPU {self._gpu_name}"
+        """Return sensor name."""
+        return "GPU Core"
 
-    def is_available(self) -> bool:
-        """Check whether this NVIDIA GPU is accessible."""
-        return self._available
+    def get_sensor_type(self) -> SensorType:
+        """Return type."""
+        return SensorType.TEMPERATURE
+
+
+class NvidiaGpuClockSensor(_NvidiaBaseSensor):
+    """NVIDIA GPU clock speed."""
+
+    def __init__(self, handle: object, gpu_name: str, clock_type: int, name: str) -> None:
+        """Initialize with clock type (0=Graphics, 2=Memory)."""
+        super().__init__(handle, gpu_name)
+        self._clock_type = clock_type
+        self._name = name
+
+    def get_temperature(self) -> float:
+        """Return clock speed in MHz."""
+        try:
+            return float(pynvml.nvmlDeviceGetClockInfo(self._handle, self._clock_type))
+        except pynvml.NVMLError:
+            return 0.0
+
+    def get_name(self) -> str:
+        """Return sensor name."""
+        return self._name
+
+    def get_sensor_type(self) -> SensorType:
+        """Return type."""
+        return SensorType.CLOCK
+
+    def get_type_group(self) -> str:
+        """Return type group."""
+        return "Clocks"
+
+
+class NvidiaGpuLoadSensor(_NvidiaBaseSensor):
+    """NVIDIA GPU utilization percentage."""
+
+    def __init__(self, handle: object, gpu_name: str, use_memory: bool = False) -> None:
+        """Initialize. use_memory=True reads memory controller load."""
+        super().__init__(handle, gpu_name)
+        self._use_memory = use_memory
+
+    def get_temperature(self) -> float:
+        """Return GPU load percentage."""
+        try:
+            util = pynvml.nvmlDeviceGetUtilizationRates(self._handle)
+            return float(util.memory if self._use_memory else util.gpu)
+        except pynvml.NVMLError:
+            return 0.0
+
+    def get_name(self) -> str:
+        """Return sensor name."""
+        return "Memory Controller" if self._use_memory else "GPU Core"
+
+    def get_sensor_type(self) -> SensorType:
+        """Return type."""
+        return SensorType.LOAD
+
+    def get_type_group(self) -> str:
+        """Return type group."""
+        return "Load"
+
+
+class NvidiaGpuVramSensor(_NvidiaBaseSensor):
+    """NVIDIA GPU VRAM usage in GB."""
+
+    def __init__(self, handle: object, gpu_name: str, report_total: bool = False) -> None:
+        """Initialize. report_total=True reports total, else used."""
+        super().__init__(handle, gpu_name)
+        self._report_total = report_total
+
+    def get_temperature(self) -> float:
+        """Return VRAM in GB."""
+        try:
+            mem = pynvml.nvmlDeviceGetMemoryInfo(self._handle)
+            val = mem.total if self._report_total else mem.used
+            return val / (1024 ** 3)
+        except pynvml.NVMLError:
+            return 0.0
+
+    def get_name(self) -> str:
+        """Return sensor name."""
+        return "VRAM Total" if self._report_total else "VRAM Used"
+
+    def get_sensor_type(self) -> SensorType:
+        """Return type."""
+        return SensorType.DATA
+
+    def get_type_group(self) -> str:
+        """Return type group."""
+        return "Data"
+
+
+class NvidiaGpuPowerSensor(_NvidiaBaseSensor):
+    """NVIDIA GPU power draw in watts."""
+
+    def get_temperature(self) -> float:
+        """Return power in watts."""
+        try:
+            return pynvml.nvmlDeviceGetPowerUsage(self._handle) / 1000
+        except pynvml.NVMLError:
+            return 0.0
+
+    def get_name(self) -> str:
+        """Return sensor name."""
+        return "GPU Power"
+
+    def get_sensor_type(self) -> SensorType:
+        """Return type."""
+        return SensorType.POWER
+
+    def get_type_group(self) -> str:
+        """Return type group."""
+        return "Power"
+
+
+class NvidiaGpuFanSensor(_NvidiaBaseSensor):
+    """NVIDIA GPU fan speed percentage."""
+
+    def get_temperature(self) -> float:
+        """Return fan speed percentage."""
+        try:
+            return float(pynvml.nvmlDeviceGetFanSpeed(self._handle))
+        except pynvml.NVMLError:
+            return 0.0
+
+    def get_name(self) -> str:
+        """Return sensor name."""
+        return "GPU Fan"
+
+    def get_sensor_type(self) -> SensorType:
+        """Return type."""
+        return SensorType.LOAD  # percentage, like LibreHWMonitor "Control"
+
+    def get_type_group(self) -> str:
+        """Return type group."""
+        return "Fans"
 
 
 class AmdGpuSensor(BaseSensor):
-    """
-    Reads AMD GPU temperature via sysfs hwmon.
-
-    Looks for temperature files under /sys/class/drm/card*/device/hwmon/
-    which is the standard path for AMD GPU temperature reporting on Linux.
-
-    Attributes:
-        temp_path: Path to the hwmon temp1_input file.
-        card_name: Identifier for this GPU card.
-    """
+    """Reads AMD GPU temperature via sysfs hwmon."""
 
     def __init__(self, temp_path: str, card_name: str) -> None:
-        """Initialize an AMD GPU sensor.
-
-        Args:
-            temp_path: Full path to temp1_input sysfs file.
-            card_name: Human-readable card identifier.
-        """
+        """Initialize an AMD GPU sensor."""
         self._temp_path = Path(temp_path)
         self._card_name = card_name
 
     def get_temperature(self) -> float:
-        """Return the current GPU temperature in Celsius.
-
-        Returns:
-            Temperature reading, or 0.0 if the file cannot be read.
-        """
+        """Return GPU temperature in Celsius."""
         try:
             raw = self._temp_path.read_text().strip()
-            return int(raw) / 1000  # sysfs reports millidegrees
+            return int(raw) / 1000
         except (OSError, ValueError):
             return 0.0
 
     def get_name(self) -> str:
-        """Return the human-readable GPU name."""
+        """Return sensor name."""
         return f"GPU {self._card_name}"
 
     def is_available(self) -> bool:
-        """Check whether the hwmon temp file is readable."""
+        """Check availability."""
         return self._temp_path.exists()
+
+    def get_hardware_group(self) -> str:
+        """Return GPU hardware group."""
+        return "GPU"
 
 
 def _discover_nvidia_gpus() -> list[BaseSensor]:
-    """
-    Discover NVIDIA GPUs via pynvml.
-
-    Returns:
-        A list of NvidiaGpuSensor instances, one per detected GPU.
-    """
+    """Discover NVIDIA GPUs and all available sensor types."""
     sensors: list[BaseSensor] = []
     if not _ensure_nvml():
         return sensors
@@ -169,20 +261,35 @@ def _discover_nvidia_gpus() -> list[BaseSensor]:
         try:
             handle = pynvml.nvmlDeviceGetHandleByIndex(i)
             name = pynvml.nvmlDeviceGetName(handle)
-            sensors.append(NvidiaGpuSensor(i, name))
         except pynvml.NVMLError:
             continue
+
+        # Temperature
+        sensors.append(NvidiaGpuTempSensor(handle, name))
+
+        # Clocks
+        sensors.append(NvidiaGpuClockSensor(handle, name, 0, "GPU Core"))
+        sensors.append(NvidiaGpuClockSensor(handle, name, 2, "GPU Memory"))
+
+        # Load
+        sensors.append(NvidiaGpuLoadSensor(handle, name, use_memory=False))
+        sensors.append(NvidiaGpuLoadSensor(handle, name, use_memory=True))
+
+        # VRAM
+        sensors.append(NvidiaGpuVramSensor(handle, name, report_total=False))
+        sensors.append(NvidiaGpuVramSensor(handle, name, report_total=True))
+
+        # Power
+        sensors.append(NvidiaGpuPowerSensor(handle, name))
+
+        # Fan
+        sensors.append(NvidiaGpuFanSensor(handle, name))
 
     return sensors
 
 
 def _discover_amd_gpus() -> list[BaseSensor]:
-    """
-    Discover AMD GPUs via sysfs hwmon.
-
-    Returns:
-        A list of AmdGpuSensor instances, one per detected AMD GPU.
-    """
+    """Discover AMD GPUs via sysfs hwmon."""
     sensors: list[BaseSensor] = []
     paths = sorted(glob.glob("/sys/class/drm/card*/device/hwmon/hwmon*/temp1_input"))
     for temp_path in paths:
@@ -191,20 +298,11 @@ def _discover_amd_gpus() -> list[BaseSensor]:
         sensor = AmdGpuSensor(temp_path, card_name)
         if sensor.is_available():
             sensors.append(sensor)
-
     return sensors
 
 
 def discover_gpu_sensors() -> list[BaseSensor]:
-    """
-    Discover all available GPU temperature sensors.
-
-    Checks for NVIDIA GPUs first, then AMD. Returns an empty list
-    if no GPUs are found.
-
-    Returns:
-        A list of BaseSensor instances for each detected GPU.
-    """
+    """Discover all available GPU sensors."""
     sensors: list[BaseSensor] = []
     sensors.extend(_discover_nvidia_gpus())
     sensors.extend(_discover_amd_gpus())

@@ -1,206 +1,110 @@
-# RESTRUCTURE.md — v2 Plan: HWMonitor-style UI + Performance
-
-> This document defines the restructuring from v1 (custom widgets + charts)
-> to v2 (CPUID HWMonitor-style tree view, no charts, optimized polling).
+# RESTRUCTURE.md — v2.1 LibreHardwareMonitor-style
 
 ---
 
-## Goal
+## Architecture
 
-Make ThermalCore look and behave like **CPUID HWMonitor**:
-
-- A single **QTreeWidget** with expandable/collapsible sections
-- Columns: **Sensor | Value | Min | Max**
-- Sections grouped by hardware component (CPU, GPU, Disks, etc.)
-- Each section is collapsible (click to expand/collapse)
-- No charts, no sparklines, no card widgets
-- Lightweight, fast, minimal CPU usage
-
----
-
-## Performance Problems (v1)
-
-| Problem | Impact | Fix |
-|---------|--------|-----|
-| `nvidia-smi` subprocess every 1s | 100-500ms blocking main thread | Use pynvml (NVML C library) |
-| pyqtgraph chart rendering | 20-80ms per frame | Remove entirely |
-| Sparkline custom paint × N sensors | 4-48ms per frame | Remove entirely |
-| All polling on main thread | UI freezes during sensor read | Background QThread |
-| Sensor data goes through widget layer | Unnecessary coupling | Direct data model |
-
----
-
-## New Architecture
+### 3-Level Tree Hierarchy
 
 ```
-src/
-├── main.py                  # Entry point (no change)
-├── app.py                   # QApplication factory (simplified)
-├── sensors/
-│   ├── base_sensor.py       # Abstract base class (no change)
-│   ├── cpu_sensor.py        # CPU reader (no change)
-│   ├── gpu_sensor.py        # GPU reader (rewrite: pynvml instead of subprocess)
-│   └── poller.py            # NEW: QThread that polls all sensors
-├── ui/
-│   ├── main_window.py       # Rewrite: QTreeWidget-based layout
-│   ├── styles.py            # Simplified dark theme QSS
-│   └── (removed)            # chart_widget.py, sensor_widget.py deleted
-└── utils/
-    └── config.py            # Updated constants
+Hardware Group (bold, with model name)
+├── Sensor Type Group (italic, e.g. "Temperatures", "Clocks")
+│   ├── Individual Sensor    │ Value   │ Min     │ Max
+│   └── Individual Sensor    │ Value   │ Min     │ Max
+└── Sensor Type Group
+    └── ...
 ```
 
----
-
-## Steps
-
-### R1 — Rewrite GPU sensor (pynvml)
-
-Replace subprocess calls to nvidia-smi with **pynvml** (Python bindings
-for NVIDIA Management Library). Direct C library calls, <1ms per read.
-
-- Add `pynvml` to requirements.txt (or `nvidia-ml-py`)
-- Rewrite `NvidiaGpuSensor` to use `nvmlDeviceGetTemperature()`
-- Initialize NVML once at startup, shutdown on exit
-- Keep AMD sysfs reader as-is (already fast)
+### Example Tree
 
 ```
-Commit: perf(gpu): replace nvidia-smi subprocess with pynvml
-```
+CPU — 13th Gen Intel Core i7-13700K
+├── Temperatures
+│   ├── Package id 0          45.0°C     38.0°C     72.0°C
+│   ├── Core 0                42.0°C     36.0°C     68.0°C
+│   ├── Core 1                43.0°C     37.0°C     70.0°C
+│   └── ...
+├── Clocks
+│   └── CPU Clock             4200 MHz   800 MHz    5000 MHz
+├── Load
+│   ├── CPU Total             12.3 %     0.0 %      98.5 %
+│   ├── Core #0               8.2 %      0.0 %      100.0 %
+│   └── ...
+└── Power
+    └── CPU Package            28.5 W     5.2 W      125.0 W
 
-### R2 — Background sensor polling thread
+GPU — NVIDIA GeForce RTX 4070 Ti SUPER
+├── Temperatures
+│   └── GPU Core              41.0°C     38.0°C     78.0°C
+├── Clocks
+│   ├── GPU Core              210 MHz    210 MHz    2745 MHz
+│   └── GPU Memory            405 MHz    405 MHz    10501 MHz
+├── Load
+│   ├── GPU Core              5.0 %      0.0 %      99.0 %
+│   └── Memory Controller     8.0 %      0.0 %      95.0 %
+├── Data
+│   ├── VRAM Used             1.6 GB     0.5 GB     12.0 GB
+│   └── VRAM Total            16.0 GB    16.0 GB    16.0 GB
+├── Power
+│   └── GPU Power             15.8 W     12.0 W     280.0 W
+└── Fans
+    └── GPU Fan               0 %        0 %        75 %
 
-Move all sensor reads off the main thread:
+Memory — 32 GB
+├── Load
+│   └── Memory                31.1 %     28.0 %     85.0 %
+└── Data
+    ├── Memory Used           10.2 GB    9.1 GB     27.5 GB
+    └── Memory Available      22.8 GB    5.5 GB     23.9 GB
 
-- Create `SensorPoller(QThread)` in `sensors/poller.py`
-- Polls all sensors every POLL_INTERVAL_MS
-- Emits a signal with `dict[str, SensorReading]` (name → value/min/max)
-- Main thread only receives data and updates QTreeWidget items
-- Zero blocking on the UI thread
-
-```
-Commit: perf(sensors): move polling to background QThread
-```
-
-### R3 — QTreeWidget-based main window (HWMonitor-style)
-
-Complete rewrite of `main_window.py`:
-
-- **QTreeWidget** with columns: Sensor | Value | Min | Max
-- Top-level items = hardware groups (expandable):
-  - "CPU — [model name]"
-    - "Package" (overall CPU temp)
-    - "Core 0", "Core 1", ... (per-core temps)
-  - "GPU — [model name]" (or "No GPU detected")
-    - "GPU Temperature"
-  - "Disks" (NVMe sensors from psutil, if available)
-    - "nvme0", "nvme1", ...
-- Each leaf item shows: current value, min since launch, max since launch
-- Monospace font for value columns
-- Color-coded value column (green/yellow/orange/red)
-- All sections expanded by default, user can collapse
-- Header bar with system info (hostname, OS, CPU, GPU, uptime)
-- No sidebar, no detail panel, no charts
-
-Layout:
-```
-┌──────────────────────────────────────────────────┐
-│ Host: ... | CPU: ... | GPU: ... | Uptime: ...    │
-├──────────────────────────────────────────────────┤
-│ Sensor              │ Value  │ Min    │ Max      │
-├──────────────────────────────────────────────────┤
-│ ▼ CPU — Intel i7    │        │        │          │
-│   Package id 0      │ 45°C   │ 38°C   │ 67°C    │
-│   Core 0            │ 42°C   │ 36°C   │ 65°C    │
-│   Core 1            │ 44°C   │ 37°C   │ 66°C    │
-│   ...               │        │        │          │
-│ ▼ GPU — RTX 4070    │        │        │          │
-│   GPU Temperature   │ 41°C   │ 38°C   │ 55°C    │
-│ ▼ Disks             │        │        │          │
-│   nvme0 Composite   │ 35°C   │ 33°C   │ 40°C    │
-│   ...               │        │        │          │
-└──────────────────────────────────────────────────┘
-│ [Export CSV]        22 sensors | Alert: 85°C     │
-└──────────────────────────────────────────────────┘
-```
-
-```
-Commit: feat(ui): rewrite to HWMonitor-style tree view
-```
-
-### R4 — Remove dead code
-
-- Delete `chart_widget.py`
-- Delete `sensor_widget.py`
-- Remove `pyqtgraph` from requirements.txt
-- Clean up imports in `__init__.py`
-
-```
-Commit: refactor: remove chart and sensor widgets, drop pyqtgraph
-```
-
-### R5 — Re-add system tray, alerts, CSV export
-
-Wire the existing features into the new tree-based window:
-
-- System tray (minimize to tray, tooltip, context menu)
-- Alerts (threshold spinbox, desktop notification, row highlight)
-- CSV export (button in status bar area)
-
-```
-Commit: feat(ui): add system tray, alerts, and CSV export to tree view
-```
-
-### R6 — Update config, styles, README
-
-- Simplify `styles.py` (QTreeWidget-focused QSS)
-- Update `config.py` (remove chart constants, add tree constants)
-- Update `README.md` (new screenshots description, remove chart mentions)
-- Update `requirements.txt` (add pynvml, remove pyqtgraph)
-
-```
-Commit: docs: update config, styles, and README for v2
-```
-
-### R7 — Final verification and cleanup
-
-- Run the app, verify:
-  - Tree view with expandable sections
-  - Values updating in real time
-  - Min/Max tracking correctly
-  - No UI stuttering
-  - System tray works
-  - CSV export works
-  - Alerts work
-- Run `pip check`
-- Mark PROGRESS.md as COMPLETED
-
-```
-Commit: chore: mark v2 restructuring as completed
+Storage
+├── Temperatures
+│   ├── Composite             30.9°C     28.0°C     42.0°C
+│   ├── Sensor 1              30.9°C     28.0°C     42.0°C
+│   └── ...
+├── Load
+│   └── Usage (/)             9.7 %      9.7 %      9.8 %
+└── Data
+    ├── Used Space (/)        44.4 GB    44.4 GB    44.5 GB
+    └── Free Space (/)        411.9 GB   411.8 GB   411.9 GB
 ```
 
 ---
 
-## Dependencies Change
+## Sensor Types Supported
 
-### Remove
-- `pyqtgraph>=0.13.3` (charts no longer needed)
-- `numpy` (transitive dep of pyqtgraph)
-
-### Add
-- `nvidia-ml-py>=12.0` (pynvml — NVML bindings, replaces nvidia-smi subprocess)
-
-### Keep
-- `PySide6>=6.5` (Qt6 framework)
-- `psutil>=5.9` (CPU temps, system info)
+| Type | Format | Unit | Sources |
+|------|--------|------|---------|
+| Temperature | `{:.1f}` | °C | psutil, pynvml, sysfs |
+| Clock | `{:.0f}` | MHz | psutil.cpu_freq(), pynvml |
+| Load | `{:.1f}` | % | psutil.cpu_percent(), pynvml |
+| Power | `{:.1f}` | W | Intel RAPL (sysfs), pynvml |
+| Fan | `{:.0f}` | % | pynvml |
+| Data | `{:.1f}` | GB | psutil, pynvml |
 
 ---
 
-## Performance Target
+## Files Changed (vs v1)
 
-| Metric | v1 | v2 Target |
-|--------|-----|-----------|
-| Poll cycle (main thread) | 150-750ms | <5ms |
-| GPU temp read | 100-500ms (subprocess) | <1ms (pynvml) |
-| UI update | 30-130ms (chart+sparklines) | <2ms (setText on tree items) |
-| Memory (1h session) | ~50MB+ (growing log) | ~20MB (capped log) |
-| CPU usage (idle) | 5-15% | <1% |
+| File | Change |
+|------|--------|
+| `sensors/base_sensor.py` | Added SensorType enum, format_value(), type/group methods |
+| `sensors/cpu_sensor.py` | Added CpuClockSensor, CpuTotalLoadSensor, CpuCoreLoadSensor, CpuPowerSensor |
+| `sensors/gpu_sensor.py` | Added NVIDIA clock, load, VRAM, power, fan sensors via pynvml |
+| `sensors/system_sensor.py` | **NEW** — Memory and storage sensors |
+| `sensors/poller.py` | Updated for multi-type sensors with proper key generation |
+| `ui/main_window.py` | 3-level tree population, per-type formatting |
+| `ui/chart_widget.py` | **DELETED** |
+| `ui/sensor_widget.py` | **DELETED** |
+| `requirements.txt` | Replaced pyqtgraph with nvidia-ml-py |
+
+---
+
+## Performance
+
+| Metric | v1 | v2.1 |
+|--------|-----|------|
+| Poll cycle (main thread) | 150-750ms | 0ms (background thread) |
+| GPU temp read | 100-500ms (subprocess) | <0.01ms (pynvml) |
+| UI update | 30-130ms (chart+sparklines) | <3ms (setText on items) |
+| Startup | ~2s | ~0.5s |

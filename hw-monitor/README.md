@@ -1,30 +1,66 @@
 # ThermalCore — HW Monitor
 
-A lightweight desktop application for Linux that monitors CPU, GPU, and disk temperatures in real time. Inspired by CPUID HWMonitor, featuring a tree view with expandable sections, dark theme, alerts, and CSV export.
+A lightweight hardware monitoring application for Linux inspired by [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor). Features a tree view with expandable sections showing temperatures, clocks, load, power, and more.
 
 ## Features
 
-- **HWMonitor-style tree view** with expandable/collapsible hardware sections
+- **LibreHardwareMonitor-style tree view** with 3-level hierarchy:
+  - **Hardware** → **Sensor Type** → **Individual Sensor**
 - **Columns**: Sensor | Value | Min | Max
-- **Per-core CPU support** using psutil with sysfs fallback
-- **NVIDIA GPU** support via pynvml (direct NVML library, no subprocess)
-- **AMD GPU** support via sysfs hwmon
-- **NVMe disk** temperature monitoring
-- **Background polling** — sensor reads happen on a separate thread, zero UI blocking
-- **Dark monitoring theme** with color-coded temperatures
+- **CPU monitoring**: per-core temperatures, clock speed, per-core load, package power (Intel RAPL)
+- **NVIDIA GPU**: temperature, core/memory clocks, GPU/memory load, VRAM usage, power draw, fan speed
+- **AMD GPU**: temperature via sysfs hwmon
+- **Memory**: usage percentage, used/available GB
+- **Storage**: NVMe temperatures, disk usage per partition
+- **Background polling** — zero UI blocking via QThread
+- **NVIDIA via pynvml** — direct NVML library calls (<0.01ms per read)
+- **Dark theme** with color-coded temperatures
 - **System tray** — minimize to tray, tooltip with hottest temp
-- **Temperature alerts** — configurable threshold with desktop notifications
-- **CSV export** — save temperature log with timestamps
-- **System info header** — hostname, CPU model, GPU model, uptime
+- **Alerts** — configurable threshold with desktop notifications
+- **CSV export** — save all sensor data with timestamps
+
+## Screenshot layout
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ Host: vicen | CPU: i7-13700K | GPU: RTX 4070 | Up: 2d   │
+├─────────────────────────┬────────┬────────┬──────────────┤
+│ Sensor                  │ Value  │ Min    │ Max          │
+├─────────────────────────┼────────┼────────┼──────────────┤
+│ ▼ CPU — Intel i7-13700K │        │        │              │
+│   ▼ Temperatures        │        │        │              │
+│     Package id 0        │ 45.0°C │ 38.0°C │ 72.0°C      │
+│     Core 0              │ 42.0°C │ 36.0°C │ 68.0°C      │
+│   ▼ Clocks              │        │        │              │
+│     CPU Clock           │ 4200 MHz│ 800 MHz│ 5000 MHz   │
+│   ▼ Load                │        │        │              │
+│     CPU Total           │ 12.3 % │ 0.0 % │ 98.5 %      │
+│   ▼ Power               │        │        │              │
+│     CPU Package         │ 28.5 W │ 5.2 W │ 125.0 W     │
+│ ▼ GPU — RTX 4070 Ti     │        │        │              │
+│   ▼ Temperatures        │        │        │              │
+│     GPU Core            │ 41.0°C │ 38.0°C │ 78.0°C      │
+│   ▼ Clocks              │        │        │              │
+│     GPU Core            │ 210 MHz│ 210 MHz│ 2745 MHz    │
+│   ▼ Power               │        │        │              │
+│     GPU Power           │ 15.8 W │ 12.0 W │ 280.0 W    │
+│ ▼ Memory — 32 GB        │        │        │              │
+│   ▼ Load                │        │        │              │
+│     Memory              │ 31.1 % │ 28.0 % │ 85.0 %     │
+│ ▼ Storage               │        │        │              │
+│   ▼ Temperatures        │        │        │              │
+│     NVMe Composite      │ 30.9°C │ 28.0°C │ 42.0°C     │
+└─────────────────────────┴────────┴────────┴──────────────┘
+│ Alert: [85°C]                              [Export CSV]   │
+└──────────────────────────────────────────────────────────┘
+```
 
 ## Requirements
 
 - **Python** 3.10+
 - **Linux** (tested on Ubuntu 22.04+)
-- **lm-sensors** (for CPU temperature readings via psutil)
+- **lm-sensors** (CPU temperatures via psutil)
 - **NVIDIA driver** (optional, for GPU monitoring via pynvml)
-
-### System dependencies
 
 ```bash
 sudo apt install lm-sensors libxcb-cursor0
@@ -41,13 +77,6 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Or use the setup script:
-
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
 ## Usage
 
 ```bash
@@ -55,75 +84,34 @@ source .venv/bin/activate
 python src/main.py
 ```
 
-### Interface
-
-```
-┌──────────────────────────────────────────────────┐
-│ Host: ... | CPU: ... | GPU: ... | Uptime: ...    │
-├──────────────────────────────────────────────────┤
-│ Sensor              │ Value  │ Min    │ Max      │
-├──────────────────────────────────────────────────┤
-│ ▼ CPU — Intel i7    │        │        │          │
-│   Package id 0      │ 45°C   │ 38°C   │ 67°C    │
-│   Core 0            │ 42°C   │ 36°C   │ 65°C    │
-│   ...               │        │        │          │
-│ ▼ GPU — RTX 4070    │        │        │          │
-│   GPU Temperature   │ 41°C   │ 38°C   │ 55°C    │
-│ ▼ Disks             │        │        │          │
-│   NVMe Composite    │ 35°C   │ 33°C   │ 40°C    │
-└──────────────────────────────────────────────────┘
-│ Alert: [85°C]                      [Export CSV]  │
-└──────────────────────────────────────────────────┘
-```
-
-- Click section headers to expand/collapse
+- Click **▼/►** arrows to expand/collapse hardware sections
 - Temperatures are color-coded: green (<50°C), yellow (50-70), orange (70-85), red (>85)
-- Closing the window minimizes to system tray
-- Double-click tray icon to restore
-
-## Troubleshooting
-
-### No sensors detected
-
-```bash
-sudo apt install lm-sensors && sudo sensors-detect
-python3 -c "import psutil; print(psutil.sensors_temperatures())"
-```
-
-### No GPU detected
-
-The app shows "No GPU detected" gracefully. For NVIDIA, ensure the driver is installed (`nvidia-smi`).
-
-### Qt platform plugin error
-
-```bash
-sudo apt install libxcb-cursor0
-```
+- Close window → minimizes to system tray
+- Double-click tray icon → restore window
+- **Export CSV** saves all recorded data
 
 ## Project structure
 
 ```
 hw-monitor/
-├── README.md
-├── requirements.txt
-├── pyproject.toml
-├── .python-version
-├── setup.sh
 ├── src/
 │   ├── main.py
 │   ├── app.py
 │   ├── sensors/
-│   │   ├── base_sensor.py
-│   │   ├── cpu_sensor.py
-│   │   ├── gpu_sensor.py
-│   │   └── poller.py
+│   │   ├── base_sensor.py     # SensorType enum, format_value()
+│   │   ├── cpu_sensor.py      # Temp, clock, load, power
+│   │   ├── gpu_sensor.py      # NVIDIA (pynvml) + AMD (sysfs)
+│   │   ├── system_sensor.py   # Memory, storage, NVMe
+│   │   └── poller.py          # Background QThread
 │   ├── ui/
-│   │   ├── main_window.py
-│   │   └── styles.py
+│   │   ├── main_window.py     # 3-level tree view
+│   │   └── styles.py          # Dark theme QSS
 │   └── utils/
 │       └── config.py
-└── assets/
-    └── icons/
+├── requirements.txt
+├── pyproject.toml
+├── .python-version
+└── setup.sh
 ```
 
 ## License

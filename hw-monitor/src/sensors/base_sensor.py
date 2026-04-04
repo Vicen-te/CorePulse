@@ -1,29 +1,73 @@
 """
-Abstract base class for temperature sensors.
+Abstract base class for hardware sensors.
 
-Defines the interface that all sensor readers must implement,
-ensuring consistent behavior across CPU and GPU sensors.
+Defines the interface that all sensor readers must implement.
+Supports different sensor types (temperature, voltage, clock, etc.)
+following the LibreHardwareMonitor pattern.
 """
 
+# Standard library
 from abc import ABC, abstractmethod
+from enum import Enum
+
+
+class SensorType(Enum):
+    """Type of hardware sensor reading."""
+
+    TEMPERATURE = "temperature"
+    VOLTAGE = "voltage"
+    CLOCK = "clock"
+    LOAD = "load"
+    FAN = "fan"
+    POWER = "power"
+    DATA = "data"
+    THROUGHPUT = "throughput"
+
+
+# Display format per sensor type
+SENSOR_FORMATS: dict[SensorType, tuple[str, str]] = {
+    SensorType.TEMPERATURE: ("{:.1f}", "°C"),
+    SensorType.VOLTAGE: ("{:.3f}", " V"),
+    SensorType.CLOCK: ("{:.0f}", " MHz"),
+    SensorType.LOAD: ("{:.1f}", " %"),
+    SensorType.FAN: ("{:.0f}", " RPM"),
+    SensorType.POWER: ("{:.1f}", " W"),
+    SensorType.DATA: ("{:.1f}", " GB"),
+    SensorType.THROUGHPUT: ("{:.1f}", " MB/s"),
+}
+
+
+def format_value(value: float, sensor_type: SensorType) -> str:
+    """
+    Format a sensor value with appropriate units.
+
+    Args:
+        value: The raw sensor value.
+        sensor_type: The type of sensor.
+
+    Returns:
+        Formatted string with units (e.g. "42.0°C", "210 MHz").
+    """
+    fmt, unit = SENSOR_FORMATS.get(sensor_type, ("{:.1f}", ""))
+    return fmt.format(value) + unit
 
 
 class BaseSensor(ABC):
     """
-    Abstract base class for hardware temperature sensors.
+    Abstract base class for hardware sensors.
 
     All concrete sensor implementations must provide methods
-    to read the current temperature, report their name,
+    to read the current value, report their name, type,
     and indicate whether the sensor hardware is available.
     """
 
     @abstractmethod
     def get_temperature(self) -> float:
         """
-        Return the current temperature in degrees Celsius.
+        Return the current reading value.
 
         Returns:
-            The current sensor temperature.
+            The current sensor value in its native unit.
         """
 
     @abstractmethod
@@ -43,3 +87,40 @@ class BaseSensor(ABC):
         Returns:
             True if the sensor hardware is detected and readable.
         """
+
+    def get_sensor_type(self) -> SensorType:
+        """
+        Return the type of this sensor.
+
+        Returns:
+            SensorType.TEMPERATURE by default; override in subclasses.
+        """
+        return SensorType.TEMPERATURE
+
+    def get_hardware_group(self) -> str:
+        """
+        Return the hardware group this sensor belongs to.
+
+        Returns:
+            Hardware group name (e.g. "CPU", "GPU", "Storage").
+        """
+        return "Unknown"
+
+    def get_type_group(self) -> str:
+        """
+        Return the sensor type group name for the tree.
+
+        Returns:
+            Type group name (e.g. "Temperatures", "Clocks", "Load").
+        """
+        type_map = {
+            SensorType.TEMPERATURE: "Temperatures",
+            SensorType.VOLTAGE: "Voltages",
+            SensorType.CLOCK: "Clocks",
+            SensorType.LOAD: "Load",
+            SensorType.FAN: "Fans",
+            SensorType.POWER: "Power",
+            SensorType.DATA: "Data",
+            SensorType.THROUGHPUT: "Throughput",
+        }
+        return type_map.get(self.get_sensor_type(), "Other")

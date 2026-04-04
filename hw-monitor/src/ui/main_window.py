@@ -1,18 +1,16 @@
 """
-Main window layout for ThermalCore v2.
+Main window layout for ThermalCore.
 
-HWMonitor-style tree view with expandable sections for each hardware
-component. Columns: Sensor | Value | Min | Max. Lightweight and fast.
+LibreHardwareMonitor-style tree view with 3-level hierarchy:
+Hardware → Sensor Type → Individual Sensor.
 """
 
 # Standard library
 import csv
 import platform
 import socket
-import subprocess
+from collections import OrderedDict
 from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Optional
 
 # Third-party
 from PySide6.QtWidgets import (
@@ -33,7 +31,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QAction
+from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QAction, QBrush
 
 # Local
 from utils.config import (
@@ -55,19 +53,26 @@ from utils.config import (
     COLOR_BACKGROUND,
     COLOR_WARNING,
 )
-from sensors.base_sensor import BaseSensor
+from sensors.base_sensor import BaseSensor, SensorType, format_value
 from sensors.cpu_sensor import discover_cpu_sensors
 from sensors.gpu_sensor import discover_gpu_sensors, shutdown_nvml
+from sensors.system_sensor import discover_memory_sensors, discover_storage_sensors
 from sensors.poller import SensorPoller, SensorReading
+
+# Hardware group display order
+_HW_ORDER: list[str] = ["CPU", "GPU", "Memory", "Storage"]
+
+# Type group display order within each hardware group
+_TYPE_ORDER: list[str] = [
+    "Temperatures", "Clocks", "Load", "Power", "Fans", "Voltages", "Data", "Throughput",
+]
+
+# Maximum temperature log entries
+_MAX_LOG_ENTRIES: int = 36000
 
 
 def _get_system_info() -> dict[str, str]:
-    """
-    Gather system information for the header bar.
-
-    Returns:
-        Dictionary with hostname, os, kernel, cpu_model, gpu_model, and uptime.
-    """
+    """Gather system information for the header bar."""
     info: dict[str, str] = {}
     info["hostname"] = socket.gethostname()
     info["os"] = f"{platform.system()} {platform.release()}"
@@ -79,24 +84,23 @@ def _get_system_info() -> dict[str, str]:
                     info["cpu_model"] = line.split(":", 1)[1].strip()
                     break
     except OSError:
-        info["cpu_model"] = "Unknown CPU"
+        info["cpu_model"] = "Unknown"
 
-    # GPU model via pynvml (already initialized by sensor discovery)
     try:
         import pynvml
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         info["gpu_model"] = pynvml.nvmlDeviceGetName(handle)
     except Exception:
-        info["gpu_model"] = "No GPU detected"
+        info["gpu_model"] = "No GPU"
 
     try:
         with open("/proc/uptime") as f:
-            seconds = float(f.read().split()[0])
-            delta = timedelta(seconds=int(seconds))
+            secs = float(f.read().split()[0])
+            delta = timedelta(seconds=int(secs))
             d, h, m = delta.days, delta.seconds // 3600, (delta.seconds % 3600) // 60
             info["uptime"] = f"{d}d {h}h {m}m"
     except OSError:
-        info["uptime"] = "Unknown"
+        info["uptime"] = "?"
 
     return info
 
@@ -118,40 +122,30 @@ def _create_app_icon() -> QIcon:
     return QIcon(pixmap)
 
 
-# Maximum temperature log entries to keep in memory
-_MAX_LOG_ENTRIES: int = 36000
-
-
 class MainWindow(QMainWindow):
     """
-    HWMonitor-style main window with a QTreeWidget.
+    LibreHardwareMonitor-style main window.
 
-    Displays temperature sensors in an expandable tree grouped by
-    hardware component. Columns: Sensor | Value | Min | Max.
-    Background thread polls sensors; UI only updates text items.
-
-    Attributes:
-        sensors: All discovered temperature sensors.
-        poller: Background polling thread.
+    3-level QTreeWidget: Hardware → Sensor Type → Sensor.
+    Background thread polls; UI only updates text.
     """
 
     def __init__(self) -> None:
-        """Initialize the main window, discover sensors, and start polling."""
+        """Initialize the main window."""
         super().__init__()
 
-        self._cpu_sensors: list[BaseSensor] = []
-        self._gpu_sensors: list[BaseSensor] = []
         self._all_sensors: list[BaseSensor] = []
-        self._tree_items: dict[str, QTreeWidgetItem] = {}
+        self._sensor_items: dict[str, QTreeWidgetItem] = {}
         self._temperature_log: list[dict[str, object]] = []
         self._alert_threshold: int = CRITICAL_TEMP_THRESHOLD
         self._alert_active: bool = False
+        self._sys_info = _get_system_info()
 
         self._app_icon = _create_app_icon()
         self.setWindowIcon(self._app_icon)
         self.setWindowTitle(WINDOW_TITLE)
         self.setMinimumSize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
-        self.resize(900, 600)
+        self.resize(750, 650)
 
         self._discover_sensors()
         self._setup_ui()
@@ -159,46 +153,79 @@ class MainWindow(QMainWindow):
         self._start_polling()
 
     def _discover_sensors(self) -> None:
-        """Find all available CPU and GPU sensors."""
-        self._cpu_sensors = discover_cpu_sensors()
-        self._gpu_sensors = discover_gpu_sensors()
-        self._all_sensors = self._cpu_sensors + self._gpu_sensors
+        """Find all available sensors."""
+        self._all_sensors.extend(discover_cpu_sensors())
+        self._all_sensors.extend(discover_gpu_sensors())
+        self._all_sensors.extend(discover_memory_sensors())
+        self._all_sensors.extend(discover_storage_sensors())
+
+    # --- UI setup ---
 
     def _setup_ui(self) -> None:
-        """Build the main layout: header + tree + status bar."""
+        """Build the main layout."""
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # --- Header bar ---
         self._setup_header(layout)
+        self._setup_tree(layout)
+        self._setup_bottom_bar(layout)
 
-        # --- Tree widget ---
+        status_bar = QStatusBar()
+        self.setStatusBar(status_bar)
+        self._status_label = QLabel(f"{len(self._all_sensors)} sensors")
+        status_bar.addPermanentWidget(self._status_label)
+
+    def _setup_header(self, parent: QVBoxLayout) -> None:
+        """Create the system info header bar."""
+        header = QFrame()
+        header.setStyleSheet(
+            f"background-color: {COLOR_PANEL}; border-bottom: 1px solid {COLOR_ACCENT};"
+        )
+        header.setFixedHeight(32)
+
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(10, 0, 10, 0)
+        hl.setSpacing(16)
+
+        hfont = QFont("Consolas", 9)
+        hfont.setStyleHint(QFont.StyleHint.Monospace)
+
+        for key, val in [
+            ("Host", self._sys_info.get("hostname", "?")),
+            ("CPU", self._sys_info.get("cpu_model", "?")),
+            ("GPU", self._sys_info.get("gpu_model", "?")),
+            ("Uptime", self._sys_info.get("uptime", "?")),
+        ]:
+            lbl = QLabel(f"<b>{key}:</b> {val}")
+            lbl.setFont(hfont)
+            lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
+            hl.addWidget(lbl)
+        hl.addStretch()
+        parent.addWidget(header)
+
+    def _setup_tree(self, parent: QVBoxLayout) -> None:
+        """Create and populate the QTreeWidget."""
         self._tree = QTreeWidget()
         self._tree.setHeaderLabels(["Sensor", "Value", "Min", "Max"])
         self._tree.setColumnCount(4)
         self._tree.setRootIsDecorated(True)
         self._tree.setAnimated(False)
         self._tree.setIndentation(20)
-        self._tree.setAlternatingRowColors(False)
         self._tree.setUniformRowHeights(True)
 
-        mono_font = QFont("JetBrains Mono", 11)
-        mono_font.setStyleHint(QFont.StyleHint.Monospace)
-        self._tree.setFont(mono_font)
+        mono = QFont("JetBrains Mono", 10)
+        mono.setStyleHint(QFont.StyleHint.Monospace)
+        self._tree.setFont(mono)
 
-        # Column sizing
-        header = self._tree.header()
-        header.setStretchLastSection(False)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        self._tree.setColumnWidth(1, 100)
-        self._tree.setColumnWidth(2, 100)
-        self._tree.setColumnWidth(3, 100)
+        hdr = self._tree.header()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for col in (1, 2, 3):
+            hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+            self._tree.setColumnWidth(col, 110)
 
         self._tree.setStyleSheet(f"""
             QTreeWidget {{
@@ -208,8 +235,7 @@ class MainWindow(QMainWindow):
                 outline: none;
             }}
             QTreeWidget::item {{
-                padding: 4px 8px;
-                border-bottom: 1px solid {COLOR_PANEL};
+                padding: 3px 6px;
             }}
             QTreeWidget::item:selected {{
                 background-color: {COLOR_ACCENT};
@@ -217,74 +243,123 @@ class MainWindow(QMainWindow):
             QTreeWidget::branch {{
                 background-color: {COLOR_BACKGROUND};
             }}
+            QTreeWidget::branch:has-children:closed {{
+                image: none;
+                border-image: none;
+            }}
+            QTreeWidget::branch:has-children:open {{
+                image: none;
+                border-image: none;
+            }}
             QHeaderView::section {{
                 background-color: {COLOR_PANEL};
                 color: {COLOR_TEXT_PRIMARY};
-                padding: 6px 8px;
+                padding: 5px 8px;
                 border: none;
-                border-bottom: 1px solid {COLOR_ACCENT};
+                border-bottom: 2px solid {COLOR_ACCENT};
                 border-right: 1px solid {COLOR_ACCENT};
                 font-weight: bold;
+                font-size: 11px;
             }}
         """)
 
         self._populate_tree()
-        layout.addWidget(self._tree, stretch=1)
+        parent.addWidget(self._tree, stretch=1)
 
-        # --- Bottom bar: controls ---
-        self._setup_bottom_bar(layout)
+    def _populate_tree(self) -> None:
+        """Build the 3-level tree: Hardware → Type → Sensor."""
+        self._tree.clear()
+        self._sensor_items.clear()
 
-        # --- Status bar ---
-        status_bar = QStatusBar()
-        self.setStatusBar(status_bar)
-        self._status_label = QLabel(f"{len(self._all_sensors)} sensors detected")
-        status_bar.addPermanentWidget(self._status_label)
+        # Group sensors: hardware_group → type_group → [sensors]
+        grouped: dict[str, dict[str, list[BaseSensor]]] = OrderedDict()
+        for hw in _HW_ORDER:
+            grouped[hw] = OrderedDict()
 
-    def _setup_header(self, parent_layout: QVBoxLayout) -> None:
-        """Create the system info header bar."""
-        header_frame = QFrame()
-        header_frame.setStyleSheet(
-            f"background-color: {COLOR_PANEL}; border-bottom: 1px solid {COLOR_ACCENT};"
-        )
-        header_frame.setFixedHeight(36)
+        for sensor in self._all_sensors:
+            hw = sensor.get_hardware_group()
+            tg = sensor.get_type_group()
+            if hw not in grouped:
+                grouped[hw] = OrderedDict()
+            if tg not in grouped[hw]:
+                grouped[hw][tg] = []
+            grouped[hw][tg].append(sensor)
 
-        header_layout = QHBoxLayout(header_frame)
-        header_layout.setContentsMargins(12, 2, 12, 2)
-        header_layout.setSpacing(20)
+        # Sort type groups within each hardware group
+        for hw in grouped:
+            sorted_types = OrderedDict()
+            for t in _TYPE_ORDER:
+                if t in grouped[hw]:
+                    sorted_types[t] = grouped[hw][t]
+            for t in grouped[hw]:
+                if t not in sorted_types:
+                    sorted_types[t] = grouped[hw][t]
+            grouped[hw] = sorted_types
 
-        info = _get_system_info()
-        header_font = QFont("Consolas", 9)
-        header_font.setStyleHint(QFont.StyleHint.Monospace)
+        bold = QFont("JetBrains Mono", 10, QFont.Weight.Bold)
+        type_font = QFont("JetBrains Mono", 10)
+        type_font.setItalic(False)
+        secondary_brush = QBrush(QColor(COLOR_TEXT_SECONDARY))
 
-        for key, value in [
-            ("Host", info.get("hostname", "?")),
-            ("CPU", info.get("cpu_model", "?")),
-            ("GPU", info.get("gpu_model", "?")),
-            ("Uptime", info.get("uptime", "?")),
-        ]:
-            label = QLabel(f"<b>{key}:</b> {value}")
-            label.setFont(header_font)
-            label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
-            header_layout.addWidget(label)
+        for hw_name, type_groups in grouped.items():
+            if not type_groups:
+                continue
 
-        header_layout.addStretch()
-        parent_layout.addWidget(header_frame)
+            # Hardware display name with model info
+            hw_display = self._hw_display_name(hw_name)
+            hw_item = QTreeWidgetItem(self._tree, [hw_display, "", "", ""])
+            hw_item.setFont(0, bold)
+            hw_item.setFlags(hw_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            hw_item.setExpanded(True)
 
-    def _setup_bottom_bar(self, parent_layout: QVBoxLayout) -> None:
-        """Create the bottom bar with alert threshold and export button."""
+            for type_name, sensors in type_groups.items():
+                if not sensors:
+                    continue
+
+                type_item = QTreeWidgetItem(hw_item, [type_name, "", "", ""])
+                type_item.setFont(0, type_font)
+                type_item.setForeground(0, secondary_brush)
+                type_item.setFlags(type_item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+                type_item.setExpanded(True)
+
+                for sensor in sensors:
+                    key = f"{hw_name}|{type_name}|{sensor.get_name()}"
+                    item = QTreeWidgetItem(type_item, [sensor.get_name(), "--", "--", "--"])
+                    for col in (1, 2, 3):
+                        item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                    self._sensor_items[key] = item
+
+    def _hw_display_name(self, hw_name: str) -> str:
+        """Build the display name for a hardware group node."""
+        if hw_name == "CPU":
+            model = self._sys_info.get("cpu_model", "")
+            return f"CPU — {model}" if model else "CPU"
+        elif hw_name == "GPU":
+            model = self._sys_info.get("gpu_model", "")
+            return f"GPU — {model}" if model else "GPU"
+        elif hw_name == "Memory":
+            import psutil
+            total = psutil.virtual_memory().total / (1024 ** 3)
+            return f"Memory — {total:.0f} GB"
+        elif hw_name == "Storage":
+            return "Storage"
+        return hw_name
+
+    def _setup_bottom_bar(self, parent: QVBoxLayout) -> None:
+        """Create the bottom bar with alert threshold and export."""
         bar = QFrame()
         bar.setStyleSheet(
             f"background-color: {COLOR_PANEL}; border-top: 1px solid {COLOR_ACCENT};"
         )
-        bar.setFixedHeight(40)
+        bar.setFixedHeight(36)
 
-        bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(12, 4, 12, 4)
-        bar_layout.setSpacing(8)
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(10, 2, 10, 2)
+        bl.setSpacing(6)
 
-        alert_label = QLabel("Alert:")
-        alert_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
-        bar_layout.addWidget(alert_label)
+        alert_lbl = QLabel("Alert:")
+        alert_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; background: transparent;")
+        bl.addWidget(alert_lbl)
 
         self._threshold_spin = QSpinBox()
         self._threshold_spin.setRange(30, 120)
@@ -296,106 +371,22 @@ class MainWindow(QMainWindow):
             f"border: 1px solid {COLOR_ACCENT}; border-radius: 3px; padding: 2px 6px;"
         )
         self._threshold_spin.valueChanged.connect(self._on_threshold_changed)
-        bar_layout.addWidget(self._threshold_spin)
+        bl.addWidget(self._threshold_spin)
 
-        bar_layout.addStretch()
+        bl.addStretch()
 
         export_btn = QPushButton("Export CSV")
-        export_btn.setFixedWidth(100)
+        export_btn.setFixedWidth(90)
         export_btn.setStyleSheet(
             f"background-color: {COLOR_ACCENT}; color: {COLOR_TEXT_PRIMARY}; "
-            f"border: none; border-radius: 3px; padding: 4px 12px; font-weight: bold;"
+            f"border: none; border-radius: 3px; padding: 3px 10px; font-weight: bold;"
         )
         export_btn.clicked.connect(self._export_csv)
-        bar_layout.addWidget(export_btn)
+        bl.addWidget(export_btn)
 
-        parent_layout.addWidget(bar)
+        parent.addWidget(bar)
 
-    def _populate_tree(self) -> None:
-        """Create the tree structure with hardware groups and sensor items."""
-        self._tree.clear()
-        self._tree_items.clear()
-
-        # Detect NVMe/disk sensors from psutil
-        import psutil
-        all_temps = psutil.sensors_temperatures()
-        nvme_entries = all_temps.get("nvme", [])
-
-        # --- CPU group ---
-        if self._cpu_sensors:
-            cpu_info = _get_system_info().get("cpu_model", "CPU")
-            cpu_group = QTreeWidgetItem(self._tree, [f"CPU — {cpu_info}"])
-            cpu_group.setFlags(cpu_group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            bold_font = QFont("JetBrains Mono", 11, QFont.Weight.Bold)
-            cpu_group.setFont(0, bold_font)
-            cpu_group.setExpanded(True)
-
-            for sensor in self._cpu_sensors:
-                name = sensor.get_name()
-                item = QTreeWidgetItem(cpu_group, [name, "--", "--", "--"])
-                item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
-                item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
-                item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)
-                self._tree_items[name] = item
-
-        # --- GPU group ---
-        gpu_label = "No GPU detected"
-        if self._gpu_sensors:
-            gpu_label = self._gpu_sensors[0].get_name().replace("GPU ", "")
-
-        gpu_group = QTreeWidgetItem(self._tree, [f"GPU — {gpu_label}"])
-        gpu_group.setFlags(gpu_group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-        bold_font = QFont("JetBrains Mono", 11, QFont.Weight.Bold)
-        gpu_group.setFont(0, bold_font)
-        gpu_group.setExpanded(True)
-
-        if self._gpu_sensors:
-            for sensor in self._gpu_sensors:
-                name = sensor.get_name()
-                item = QTreeWidgetItem(gpu_group, ["GPU Temperature", "--", "--", "--"])
-                item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
-                item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
-                item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)
-                self._tree_items[name] = item
-        else:
-            no_gpu = QTreeWidgetItem(gpu_group, ["No GPU detected", "", "", ""])
-            no_gpu.setForeground(0, QColor(COLOR_TEXT_SECONDARY))
-
-        # --- Disks group (NVMe from psutil) ---
-        if nvme_entries:
-            disk_group = QTreeWidgetItem(self._tree, ["Disks"])
-            disk_group.setFlags(disk_group.flags() & ~Qt.ItemFlag.ItemIsSelectable)
-            bold_font = QFont("JetBrains Mono", 11, QFont.Weight.Bold)
-            disk_group.setFont(0, bold_font)
-            disk_group.setExpanded(True)
-
-            for entry in nvme_entries:
-                label = entry.label if entry.label else "NVMe"
-                display_name = f"NVMe {label}"
-                item = QTreeWidgetItem(disk_group, [display_name, "--", "--", "--"])
-                item.setTextAlignment(1, Qt.AlignmentFlag.AlignCenter)
-                item.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
-                item.setTextAlignment(3, Qt.AlignmentFlag.AlignCenter)
-                # Store NVMe readings with a unique key
-                self._tree_items[f"nvme_{label}"] = item
-
-    def _setup_system_tray(self) -> None:
-        """Create the system tray icon with context menu."""
-        self._tray_icon = QSystemTrayIcon(self._app_icon, self)
-
-        tray_menu = QMenu()
-        show_action = QAction("Show", self)
-        show_action.triggered.connect(self._show_from_tray)
-        tray_menu.addAction(show_action)
-        tray_menu.addSeparator()
-        quit_action = QAction("Quit", self)
-        quit_action.triggered.connect(self._quit_app)
-        tray_menu.addAction(quit_action)
-
-        self._tray_icon.setContextMenu(tray_menu)
-        self._tray_icon.activated.connect(self._on_tray_activated)
-        self._tray_icon.setToolTip("ThermalCore — Loading...")
-        self._tray_icon.show()
+    # --- Polling ---
 
     def _start_polling(self) -> None:
         """Start the background sensor polling thread."""
@@ -404,91 +395,50 @@ class MainWindow(QMainWindow):
         self._poller.start()
 
     def _on_readings_updated(self, readings: dict[str, SensorReading]) -> None:
-        """Handle new readings from the background thread.
-
-        Args:
-            readings: Dict mapping sensor name to its SensorReading.
-        """
+        """Handle new readings from the background thread."""
         hottest_temp = 0.0
         hottest_name = ""
         log_entry: dict[str, object] = {"timestamp": datetime.now().isoformat()}
 
-        for name, reading in readings.items():
-            log_entry[name] = reading.current
+        for key, reading in readings.items():
+            log_entry[reading.name] = reading.current
 
-            if reading.current > hottest_temp:
+            # Track hottest temperature sensor for alerts
+            if reading.sensor_type == SensorType.TEMPERATURE and reading.current > hottest_temp:
                 hottest_temp = reading.current
-                hottest_name = name
+                hottest_name = reading.name.split("|")[-1] if "|" in reading.name else reading.name
 
-            item = self._tree_items.get(name)
+            item = self._sensor_items.get(key)
             if item is None:
                 continue
 
-            if reading.current <= 0:
+            if reading.current <= 0 and reading.sensor_type != SensorType.LOAD:
                 continue
 
-            # Update text
-            item.setText(1, f"{reading.current:.1f}°C")
-            item.setText(2, f"{reading.min_temp:.1f}°C")
-            item.setText(3, f"{reading.max_temp:.1f}°C")
+            # Format values with proper units
+            val_str = format_value(reading.current, reading.sensor_type)
+            min_str = format_value(reading.min_val, reading.sensor_type) if reading.min_val != float("inf") else "--"
+            max_str = format_value(reading.max_val, reading.sensor_type) if reading.max_val != float("-inf") else "--"
 
-            # Color the value column
-            color = QColor(self._get_temp_color(reading.current))
-            item.setForeground(1, color)
+            item.setText(1, val_str)
+            item.setText(2, min_str)
+            item.setText(3, max_str)
 
-        # Also update NVMe sensors directly from psutil
-        self._update_nvme_readings(log_entry)
+            # Color the value column for temperatures
+            if reading.sensor_type == SensorType.TEMPERATURE:
+                color = QColor(self._get_temp_color(reading.current))
+                item.setForeground(1, color)
 
-        # Cap temperature log
         if len(self._temperature_log) < _MAX_LOG_ENTRIES:
             self._temperature_log.append(log_entry)
 
-        # Update tray tooltip
         self._tray_icon.setToolTip(f"ThermalCore — {hottest_name}: {hottest_temp:.0f}°C")
-
-        # Check alerts
         self._check_alerts(hottest_temp, hottest_name)
 
-    def _update_nvme_readings(self, log_entry: dict[str, object]) -> None:
-        """Update NVMe disk temperature readings from psutil.
-
-        Args:
-            log_entry: Log entry dict to append NVMe readings to.
-        """
-        import psutil
-        all_temps = psutil.sensors_temperatures()
-        nvme_entries = all_temps.get("nvme", [])
-
-        for entry in nvme_entries:
-            label = entry.label if entry.label else "NVMe"
-            key = f"nvme_{label}"
-            item = self._tree_items.get(key)
-            if item is None:
-                continue
-
-            temp = entry.current
-            log_entry[key] = temp
-
-            if temp <= 0:
-                continue
-
-            # Track min/max via item data
-            stored_min = item.data(2, Qt.ItemDataRole.UserRole)
-            stored_max = item.data(3, Qt.ItemDataRole.UserRole)
-            min_val = min(stored_min, temp) if stored_min is not None else temp
-            max_val = max(stored_max, temp) if stored_max is not None else temp
-            item.setData(2, Qt.ItemDataRole.UserRole, min_val)
-            item.setData(3, Qt.ItemDataRole.UserRole, max_val)
-
-            item.setText(1, f"{temp:.1f}°C")
-            item.setText(2, f"{min_val:.1f}°C")
-            item.setText(3, f"{max_val:.1f}°C")
-
-            color = QColor(self._get_temp_color(temp))
-            item.setForeground(1, color)
+    # --- Alerts ---
 
     def _check_alerts(self, hottest_temp: float, hottest_name: str) -> None:
-        """Check if any sensor exceeds the alert threshold."""
+        """Check alert threshold."""
         if hottest_temp >= self._alert_threshold:
             if not self._alert_active:
                 self._alert_active = True
@@ -496,63 +446,76 @@ class MainWindow(QMainWindow):
                     "Temperature Alert!",
                     f"{hottest_name} reached {hottest_temp:.1f}°C "
                     f"(threshold: {self._alert_threshold}°C)",
-                    QSystemTrayIcon.MessageIcon.Critical,
-                    5000,
+                    QSystemTrayIcon.MessageIcon.Critical, 5000,
                 )
         else:
             self._alert_active = False
 
     def _on_threshold_changed(self, value: int) -> None:
-        """Update the alert threshold."""
+        """Update alert threshold."""
         self._alert_threshold = value
 
+    # --- CSV export ---
+
     def _export_csv(self) -> None:
-        """Export temperature log to a CSV file."""
+        """Export temperature log to CSV."""
         if not self._temperature_log:
             return
 
         default_name = f"thermalcore_{datetime.now():%Y%m%d_%H%M%S}.csv"
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export Temperature Log", default_name, "CSV Files (*.csv)"
-        )
-        if not file_path:
+        path, _ = QFileDialog.getSaveFileName(self, "Export", default_name, "CSV (*.csv)")
+        if not path:
             return
 
         headers = list(self._temperature_log[0].keys())
-        with open(file_path, "w", newline="") as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=headers)
-            writer.writeheader()
-            writer.writerows(self._temperature_log)
+        with open(path, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=headers)
+            w.writeheader()
+            w.writerows(self._temperature_log)
 
-        self.statusBar().showMessage(
-            f"Exported {len(self._temperature_log)} records to {file_path}", 5000
-        )
+        self.statusBar().showMessage(f"Exported {len(self._temperature_log)} records", 5000)
 
     # --- System tray ---
 
+    def _setup_system_tray(self) -> None:
+        """Create system tray icon."""
+        self._tray_icon = QSystemTrayIcon(self._app_icon, self)
+        menu = QMenu()
+
+        show = QAction("Show", self)
+        show.triggered.connect(self._show_from_tray)
+        menu.addAction(show)
+        menu.addSeparator()
+        quit_act = QAction("Quit", self)
+        quit_act.triggered.connect(self._quit_app)
+        menu.addAction(quit_act)
+
+        self._tray_icon.setContextMenu(menu)
+        self._tray_icon.activated.connect(self._on_tray_activated)
+        self._tray_icon.setToolTip("ThermalCore — Loading...")
+        self._tray_icon.show()
+
     def closeEvent(self, event: object) -> None:
-        """Minimize to tray on window close."""
+        """Minimize to tray on close."""
         event.ignore()
         self.hide()
         self._tray_icon.showMessage(
-            "ThermalCore",
-            "Running in system tray. Right-click to quit.",
-            QSystemTrayIcon.MessageIcon.Information,
-            2000,
+            "ThermalCore", "Running in system tray.",
+            QSystemTrayIcon.MessageIcon.Information, 2000,
         )
 
     def _show_from_tray(self) -> None:
-        """Restore the window from system tray."""
+        """Restore window."""
         self.showNormal()
         self.activateWindow()
 
     def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        """Handle tray icon double-click to restore window."""
+        """Handle tray double-click."""
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             self._show_from_tray()
 
     def _quit_app(self) -> None:
-        """Fully quit the application."""
+        """Quit the application."""
         self._poller.stop()
         shutdown_nvml()
         self._tray_icon.hide()
@@ -561,7 +524,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _get_temp_color(temp: float) -> str:
-        """Return the appropriate color for a temperature value."""
+        """Return color for a temperature value."""
         if temp < TEMP_THRESHOLD_LOW:
             return COLOR_TEMP_COOL
         elif temp < TEMP_THRESHOLD_MEDIUM:

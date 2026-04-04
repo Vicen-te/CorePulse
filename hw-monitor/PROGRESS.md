@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: COMPLETED
-## Last Commit: refactor: v2 HWMonitor-style tree view with optimized polling
+## Last Commit: refactor: LibreHardwareMonitor-style 3-level tree with multi-sensor support
 ## Last Updated: 2026-04-04
 
 ---
@@ -19,15 +19,28 @@
 
 ---
 
-### v2 Restructuring — HWMonitor-style UI + Performance (completed 2026-04-04)
+### v2 Restructuring — HWMonitor-style (completed 2026-04-04)
 
-- [x] R1: Rewrite GPU sensor — pynvml instead of nvidia-smi subprocess
-- [x] R2: Move sensor polling to background QThread
-- [x] R3: Replace entire UI with QTreeWidget (HWMonitor-style)
-- [x] R4: Remove pyqtgraph, chart_widget, sensor_widget, sparklines
+- [x] R1: Replace nvidia-smi subprocess with pynvml (<0.01ms reads)
+- [x] R2: Background QThread for sensor polling (zero UI blocking)
+- [x] R3: QTreeWidget with expandable sections, Sensor/Value/Min/Max columns
+- [x] R4: Remove pyqtgraph, charts, sparklines, sensor card widgets
 - [x] R5: System tray, alerts, CSV export in new UI
 - [x] R6: Update config, styles, README, requirements
-- [x] R7: Final verification and cleanup
+
+---
+
+### v2.1 — LibreHardwareMonitor-style (completed 2026-04-04)
+
+- [x] 3-level tree hierarchy: Hardware → Sensor Type → Individual Sensor
+- [x] Multi-sensor types: Temperature, Clock, Load, Power, Fan, Data
+- [x] NVIDIA GPU: temp, clocks, load, VRAM, power, fan via pynvml
+- [x] CPU: per-core temps, clock speed, per-core load, RAPL power
+- [x] Memory: used/available/load
+- [x] Storage: NVMe temps, disk usage per partition
+- [x] Proper value formatting per sensor type (°C, MHz, %, W, GB, RPM)
+- [x] Hardware group headers with model names (CPU — Intel..., GPU — RTX...)
+- [x] Type groups (Temperatures, Clocks, Load, Power, etc.) as sub-nodes
 
 ### Known Issues
 
