@@ -124,3 +124,17 @@ class BaseSensor(ABC):
             SensorType.THROUGHPUT: "Throughput",
         }
         return type_map.get(self.get_sensor_type(), "Other")
+
+    def format_reading(self, value: float) -> str:
+        """
+        Format a reading value for display.
+
+        Override in subclasses for custom formats (e.g. "X / Y GB").
+
+        Args:
+            value: The raw sensor value.
+
+        Returns:
+            Formatted string with units.
+        """
+        return format_value(value, self.get_sensor_type())

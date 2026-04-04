@@ -101,20 +101,20 @@ class MemoryLoadSensor(BaseSensor):
 # --- Storage sensors ---
 
 class DiskUsageSensor(BaseSensor):
-    """Reports disk usage for a mount point."""
+    """Reports disk usage for a mount point as value / total GB."""
 
     def __init__(self, mountpoint: str, report_type: str = "used") -> None:
         """Initialize with mount point and what to report.
 
         Args:
             mountpoint: Filesystem mount point (e.g. "/").
-            report_type: One of "used", "free", "percent".
+            report_type: One of "used", "available".
         """
         self._mountpoint = mountpoint
         self._report_type = report_type
 
     def get_temperature(self) -> float:
-        """Return disk usage value."""
+        """Return disk usage value in GB."""
         try:
             usage = psutil.disk_usage(self._mountpoint)
         except OSError:
@@ -122,15 +122,20 @@ class DiskUsageSensor(BaseSensor):
 
         if self._report_type == "used":
             return usage.used / (1024 ** 3)
-        elif self._report_type == "free":
+        elif self._report_type == "available":
             return usage.free / (1024 ** 3)
-        elif self._report_type == "percent":
-            return usage.percent
         return 0.0
+
+    def _get_total_gb(self) -> float:
+        """Return total disk size in GB."""
+        try:
+            return psutil.disk_usage(self._mountpoint).total / (1024 ** 3)
+        except OSError:
+            return 0.0
 
     def get_name(self) -> str:
         """Return sensor name."""
-        labels = {"used": "Used Space", "free": "Free Space", "percent": "Usage"}
+        labels = {"used": "Used Space", "available": "Available Space"}
         name = labels.get(self._report_type, self._report_type)
         return f"{name} ({self._mountpoint})"
 
@@ -143,9 +148,7 @@ class DiskUsageSensor(BaseSensor):
             return False
 
     def get_sensor_type(self) -> SensorType:
-        """Return appropriate type."""
-        if self._report_type == "percent":
-            return SensorType.LOAD
+        """Return DATA type."""
         return SensorType.DATA
 
     def get_hardware_group(self) -> str:
@@ -153,10 +156,13 @@ class DiskUsageSensor(BaseSensor):
         return "Storage"
 
     def get_type_group(self) -> str:
-        """Return type group."""
-        if self._report_type == "percent":
-            return "Load"
-        return "Data"
+        """Return Usage type group."""
+        return "Usage"
+
+    def format_reading(self, value: float) -> str:
+        """Format as 'X.X / Y.Y GB'."""
+        total = self._get_total_gb()
+        return f"{value:.1f} / {total:.1f} GB"
 
 
 class NvmeTempSensor(BaseSensor):
@@ -208,22 +214,29 @@ def discover_storage_sensors() -> list[BaseSensor]:
     """Discover storage and NVMe sensors."""
     sensors: list[BaseSensor] = []
 
-    # NVMe temperatures
+    # NVMe temperatures — assign drive numbers based on Composite entries
     temps = psutil.sensors_temperatures()
     nvme_entries = temps.get("nvme", [])
+    drive_num = 0
     for i, entry in enumerate(nvme_entries):
-        label = entry.label if entry.label else f"Sensor {i}"
+        raw_label = entry.label if entry.label else f"Sensor {i}"
+        if raw_label == "Composite":
+            drive_num += 1
+        label = f"{raw_label} (Drive {drive_num})"
         sensors.append(NvmeTempSensor("nvme", i, label))
 
-    # Disk usage for mounted partitions
+    # Disk usage for real mounted partitions (skip snap/squashfs/tmpfs)
+    skip_fs = {"squashfs", "tmpfs", "devtmpfs", "overlay"}
+    skip_prefixes = ("/snap/", "/sys/", "/proc/", "/run/", "/dev/")
     seen: set[str] = set()
     for part in psutil.disk_partitions(all=False):
         mp = part.mountpoint
-        if mp in seen:
+        if mp in seen or part.fstype in skip_fs:
+            continue
+        if any(mp.startswith(p) for p in skip_prefixes):
             continue
         seen.add(mp)
         sensors.append(DiskUsageSensor(mp, "used"))
-        sensors.append(DiskUsageSensor(mp, "free"))
-        sensors.append(DiskUsageSensor(mp, "percent"))
+        sensors.append(DiskUsageSensor(mp, "available"))
 
     return sensors

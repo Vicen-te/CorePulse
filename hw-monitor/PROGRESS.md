@@ -1,8 +1,8 @@
 # Project Progress
 
 ## Status: COMPLETED
-## Last Commit: refactor: LibreHardwareMonitor-style 3-level tree with multi-sensor support
-## Last Updated: 2026-04-04
+## Last Commit: fix: CPU load cache, GPU detection, NVMe keys, storage redesign
+## Last Updated: 2026-04-05
 
 ---
 
@@ -41,6 +41,14 @@
 - [x] Proper value formatting per sensor type (°C, MHz, %, W, GB, RPM)
 - [x] Hardware group headers with model names (CPU — Intel..., GPU — RTX...)
 - [x] Type groups (Temperatures, Clocks, Load, Power, etc.) as sub-nodes
+
+### v2.2 — Bugfixes & Storage Redesign (completed 2026-04-05)
+
+- [x] Fix CPU load: cores 1+ now show correct values (shared poll cache)
+- [x] Fix GPU header: NVML initialized before querying GPU name
+- [x] Fix NVMe temps: duplicate sensor names resolved with drive numbers
+- [x] Storage redesign: removed Load/Data, added Usage section (used/total, available/total GB)
+- [x] Filtered snap/squashfs/tmpfs mounts from storage sensors
 
 ### Known Issues
 

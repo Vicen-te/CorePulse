@@ -6,6 +6,7 @@ Reads CPU temperatures (psutil/sysfs), clock speeds, and per-core load.
 
 # Standard library
 import glob
+import time
 from pathlib import Path
 
 # Third-party
@@ -123,19 +124,32 @@ class CpuClockSensor(BaseSensor):
         return "Clocks"
 
 
+class _CpuLoadCache:
+    """Shared cache for per-core CPU load to avoid multiple psutil calls per poll cycle."""
+
+    _percpu: list[float] = []
+    _last_poll: float = 0.0
+    _CACHE_TTL: float = 0.5
+
+    @classmethod
+    def get_percpu(cls) -> list[float]:
+        """Return cached per-core CPU load, refreshing if stale."""
+        now = time.monotonic()
+        if now - cls._last_poll > cls._CACHE_TTL:
+            result = psutil.cpu_percent(interval=None, percpu=True)
+            if result:
+                cls._percpu = result
+            cls._last_poll = now
+        return cls._percpu
+
+
 class CpuTotalLoadSensor(BaseSensor):
     """Reads total CPU load percentage."""
 
-    def __init__(self) -> None:
-        """Initialize with a cached value."""
-        self._last_value: float = 0.0
-
     def get_temperature(self) -> float:
         """Return total CPU load percentage."""
-        val = psutil.cpu_percent(interval=None)
-        if val is not None:
-            self._last_value = val
-        return self._last_value
+        percpu = _CpuLoadCache.get_percpu()
+        return sum(percpu) / len(percpu) if percpu else 0.0
 
     def get_name(self) -> str:
         """Return the sensor name."""
@@ -161,19 +175,15 @@ class CpuTotalLoadSensor(BaseSensor):
 class CpuCoreLoadSensor(BaseSensor):
     """Reads per-core CPU load percentage."""
 
-    _last_percpu: list[float] = []
-
     def __init__(self, core_index: int) -> None:
         """Initialize for a specific core index."""
         self._core_index = core_index
 
     def get_temperature(self) -> float:
         """Return this core's load percentage."""
-        percpu = psutil.cpu_percent(interval=None, percpu=True)
-        if percpu:
-            CpuCoreLoadSensor._last_percpu = percpu
-        if self._core_index < len(CpuCoreLoadSensor._last_percpu):
-            return CpuCoreLoadSensor._last_percpu[self._core_index]
+        percpu = _CpuLoadCache.get_percpu()
+        if self._core_index < len(percpu):
+            return percpu[self._core_index]
         return 0.0
 
     def get_name(self) -> str:

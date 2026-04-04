@@ -64,7 +64,7 @@ _HW_ORDER: list[str] = ["CPU", "GPU", "Memory", "Storage"]
 
 # Type group display order within each hardware group
 _TYPE_ORDER: list[str] = [
-    "Temperatures", "Clocks", "Load", "Power", "Fans", "Voltages", "Data", "Throughput",
+    "Temperatures", "Clocks", "Load", "Power", "Fans", "Voltages", "Data", "Usage", "Throughput",
 ]
 
 # Maximum temperature log entries
@@ -87,7 +87,9 @@ def _get_system_info() -> dict[str, str]:
         info["cpu_model"] = "Unknown"
 
     try:
+        from sensors.gpu_sensor import _ensure_nvml
         import pynvml
+        _ensure_nvml()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)
         info["gpu_model"] = pynvml.nvmlDeviceGetName(handle)
     except Exception:
@@ -136,6 +138,7 @@ class MainWindow(QMainWindow):
 
         self._all_sensors: list[BaseSensor] = []
         self._sensor_items: dict[str, QTreeWidgetItem] = {}
+        self._sensor_map: dict[str, BaseSensor] = {}
         self._temperature_log: list[dict[str, object]] = []
         self._alert_threshold: int = CRITICAL_TEMP_THRESHOLD
         self._alert_active: bool = False
@@ -270,6 +273,7 @@ class MainWindow(QMainWindow):
         """Build the 3-level tree: Hardware → Type → Sensor."""
         self._tree.clear()
         self._sensor_items.clear()
+        self._sensor_map.clear()
 
         # Group sensors: hardware_group → type_group → [sensors]
         grouped: dict[str, dict[str, list[BaseSensor]]] = OrderedDict()
@@ -328,6 +332,7 @@ class MainWindow(QMainWindow):
                     for col in (1, 2, 3):
                         item.setTextAlignment(col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                     self._sensor_items[key] = item
+                    self._sensor_map[key] = sensor
 
     def _hw_display_name(self, hw_name: str) -> str:
         """Build the display name for a hardware group node."""
@@ -415,10 +420,16 @@ class MainWindow(QMainWindow):
             if reading.current <= 0 and reading.sensor_type != SensorType.LOAD:
                 continue
 
-            # Format values with proper units
-            val_str = format_value(reading.current, reading.sensor_type)
-            min_str = format_value(reading.min_val, reading.sensor_type) if reading.min_val != float("inf") else "--"
-            max_str = format_value(reading.max_val, reading.sensor_type) if reading.max_val != float("-inf") else "--"
+            # Format values with proper units (use sensor's custom format if available)
+            sensor_obj = self._sensor_map.get(key)
+            if sensor_obj is not None:
+                val_str = sensor_obj.format_reading(reading.current)
+                min_str = sensor_obj.format_reading(reading.min_val) if reading.min_val != float("inf") else "--"
+                max_str = sensor_obj.format_reading(reading.max_val) if reading.max_val != float("-inf") else "--"
+            else:
+                val_str = format_value(reading.current, reading.sensor_type)
+                min_str = format_value(reading.min_val, reading.sensor_type) if reading.min_val != float("inf") else "--"
+                max_str = format_value(reading.max_val, reading.sensor_type) if reading.max_val != float("-inf") else "--"
 
             item.setText(1, val_str)
             item.setText(2, min_str)
