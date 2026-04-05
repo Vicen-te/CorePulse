@@ -1,15 +1,13 @@
 """
 Main window layout for ThermalCore.
 
-Tree view with 3-level hierarchy: Hardware → Sensor Type → Individual Sensor.
+Tree view with 3-level hierarchy: Hardware -> Sensor Type -> Individual Sensor.
 """
 
 # Standard library
 import csv
-import platform
-import socket
-from collections import OrderedDict
-from datetime import datetime, timedelta
+from collections import OrderedDict, deque
+from datetime import datetime
 
 # Third-party
 from PySide6.QtWidgets import (
@@ -28,8 +26,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QHeaderView,
 )
-from PySide6.QtCore import Qt, QObject, Signal
-from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QColor, QAction, QBrush
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QColor, QAction, QBrush
 
 # Local
 import utils.config as cfg
@@ -46,152 +44,29 @@ from sensors.cpu_sensor import discover_cpu_sensors
 from sensors.gpu_sensor import discover_gpu_sensors, shutdown_nvml
 from sensors.system_sensor import discover_memory_sensors, discover_storage_sensors
 from sensors.poller import SensorPoller, SensorReading
+from utils.ipc import AlertBroadcaster
+from ui.icons import create_app_icon, create_branch_icons
+from ui.system_info import get_system_info
+from ui.theme_watcher import ThemeWatcher
 
 # Hardware group display order
 _HW_ORDER: list[str] = ["CPU", "GPU", "Memory", "Storage"]
 
 # Type group display order within each hardware group
 _TYPE_ORDER: list[str] = [
-    "Temperatures", "Clocks", "Load", "Power", "Fans", "Voltages", "Data", "Usage", "Throughput",
+    "Temperatures", "Clocks", "Load", "Power", "Fans",
+    "Voltages", "Data", "Usage", "Throughput",
 ]
 
 # Maximum temperature log entries
 _MAX_LOG_ENTRIES: int = 36000
 
 
-class _ThemeWatcher(QObject):
-    """Watches for system theme changes via DBus (gdbus monitor) and emits a signal."""
-
-    theme_changed = Signal(bool)
-
-    def start(self) -> None:
-        """Start monitoring DBus for theme setting changes."""
-        from PySide6.QtCore import QProcess
-        self._proc = QProcess(self)
-        self._proc.setProgram("gdbus")
-        self._proc.setArguments([
-            "monitor", "--session",
-            "--dest", "org.freedesktop.portal.Desktop",
-            "--object-path", "/org/freedesktop/portal/desktop",
-        ])
-        self._proc.readyReadStandardOutput.connect(self._on_output)
-        self._proc.start()
-
-    def _on_output(self) -> None:
-        """Parse gdbus monitor output for theme changes."""
-        data = self._proc.readAllStandardOutput().data().decode(errors="replace")
-        for line in data.splitlines():
-            if "SettingChanged" not in line:
-                continue
-            if "gtk-theme" in line or "color-scheme" in line:
-                self.theme_changed.emit(cfg.detect_dark_mode())
-                return
-
-    def stop(self) -> None:
-        """Stop the monitor process."""
-        if hasattr(self, "_proc") and self._proc.state() != 0:
-            self._proc.kill()
-            self._proc.waitForFinished(1000)
-
-
-def _get_system_info() -> dict[str, str]:
-    """Gather system information for the header bar."""
-    info: dict[str, str] = {}
-    info["hostname"] = socket.gethostname()
-    info["os"] = f"{platform.system()} {platform.release()}"
-
-    try:
-        with open("/proc/cpuinfo") as f:
-            for line in f:
-                if line.startswith("model name"):
-                    info["cpu_model"] = line.split(":", 1)[1].strip()
-                    break
-    except OSError:
-        info["cpu_model"] = "Unknown"
-
-    try:
-        from sensors.gpu_sensor import _ensure_nvml
-        import pynvml
-        _ensure_nvml()
-        handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-        info["gpu_model"] = pynvml.nvmlDeviceGetName(handle)
-    except Exception:
-        info["gpu_model"] = "No GPU"
-
-    try:
-        with open("/proc/uptime") as f:
-            secs = float(f.read().split()[0])
-            delta = timedelta(seconds=int(secs))
-            d, h, m = delta.days, delta.seconds // 3600, (delta.seconds % 3600) // 60
-            info["uptime"] = f"{d}d {h}h {m}m"
-    except OSError:
-        info["uptime"] = "?"
-
-    return info
-
-
-def _create_branch_icons() -> tuple[str, str]:
-    """Create triangle arrow icons for tree branches and return temp file paths."""
-    import tempfile, os
-    arrow_size = 12
-    color = QColor(cfg.COLOR_TEXT_SECONDARY)
-
-    # Right-pointing triangle (collapsed)
-    closed_pix = QPixmap(arrow_size, arrow_size)
-    closed_pix.fill(QColor(0, 0, 0, 0))
-    p = QPainter(closed_pix)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(color)
-    p.setPen(Qt.PenStyle.NoPen)
-    from PySide6.QtGui import QPolygonF
-    from PySide6.QtCore import QPointF
-    p.drawPolygon(QPolygonF([
-        QPointF(3, 1), QPointF(10, 6), QPointF(3, 11),
-    ]))
-    p.end()
-
-    # Down-pointing triangle (expanded)
-    open_pix = QPixmap(arrow_size, arrow_size)
-    open_pix.fill(QColor(0, 0, 0, 0))
-    p = QPainter(open_pix)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setBrush(color)
-    p.setPen(Qt.PenStyle.NoPen)
-    p.drawPolygon(QPolygonF([
-        QPointF(1, 3), QPointF(11, 3), QPointF(6, 10),
-    ]))
-    p.end()
-
-    tmp_dir = tempfile.mkdtemp(prefix="thermalcore_")
-    closed_path = os.path.join(tmp_dir, "arrow_closed.png")
-    open_path = os.path.join(tmp_dir, "arrow_open.png")
-    closed_pix.save(closed_path)
-    open_pix.save(open_path)
-    return closed_path, open_path
-
-
-def _create_app_icon() -> QIcon:
-    """Create a simple app icon."""
-    pixmap = QPixmap(64, 64)
-    pixmap.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setBrush(QColor(cfg.COLOR_WARNING))
-    painter.setPen(Qt.PenStyle.NoPen)
-    painter.drawEllipse(4, 4, 56, 56)
-    painter.setBrush(QColor(cfg.COLOR_BACKGROUND))
-    painter.drawEllipse(14, 14, 36, 36)
-    painter.setBrush(QColor(cfg.COLOR_TEMP_COOL))
-    painter.drawEllipse(22, 22, 20, 20)
-    painter.end()
-    return QIcon(pixmap)
-
-
 class MainWindow(QMainWindow):
     """
     Main window with hardware monitoring tree view.
 
-    3-level QTreeWidget: Hardware → Sensor Type → Sensor.
+    3-level QTreeWidget: Hardware -> Sensor Type -> Sensor.
     Background thread polls; UI only updates text.
     """
 
@@ -204,18 +79,21 @@ class MainWindow(QMainWindow):
         self._sensor_map: dict[str, BaseSensor] = {}
         self._active_sensors: set[str] = set()
         self._poll_count: int = 0
-        self._temperature_log: list[dict[str, object]] = []
+        self._log_keys: list[str] = []
+        self._log_data: deque[tuple] = deque(maxlen=_MAX_LOG_ENTRIES)
         self._alert_thresholds: dict[str, float] = {}
         self._triggered_alerts: set[str] = set()
-        self._sys_info = _get_system_info()
+        self._sys_info = get_system_info()
 
-        self._app_icon = _create_app_icon()
+        self._app_icon = create_app_icon()
         self.setWindowIcon(self._app_icon)
         self.setWindowTitle(WINDOW_TITLE)
         self.setMinimumSize(DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
         self.resize(750, 650)
 
         self._is_dark: bool = cfg.detect_dark_mode()
+        self._broadcaster = AlertBroadcaster()
+        self._broadcaster.start()
         self._discover_sensors()
         self._setup_ui()
         self._setup_system_tray()
@@ -299,7 +177,7 @@ class MainWindow(QMainWindow):
 
         self._tree.itemDoubleClicked.connect(self._on_item_double_clicked)
 
-        closed_icon, open_icon = _create_branch_icons()
+        closed_icon, open_icon = create_branch_icons()
         self._tree.setStyleSheet(self._build_tree_qss(closed_icon, open_icon))
 
         self._populate_tree()
@@ -345,12 +223,12 @@ class MainWindow(QMainWindow):
         """
 
     def _populate_tree(self) -> None:
-        """Build the 3-level tree: Hardware → Type → Sensor."""
+        """Build the 3-level tree: Hardware -> Type -> Sensor."""
         self._tree.clear()
         self._sensor_items.clear()
         self._sensor_map.clear()
 
-        # Group sensors: hardware_group → type_group → [sensors]
+        # Group sensors: hardware_group -> type_group -> [sensors]
         grouped: dict[str, dict[str, list[BaseSensor]]] = OrderedDict()
         for hw in _HW_ORDER:
             grouped[hw] = OrderedDict()
@@ -384,7 +262,6 @@ class MainWindow(QMainWindow):
             if not type_groups:
                 continue
 
-            # Hardware display name with model info
             hw_display = self._hw_display_name(hw_name)
             hw_item = QTreeWidgetItem(self._tree, [hw_display, "", "", "", ""])
             hw_item.setFont(0, bold)
@@ -426,7 +303,7 @@ class MainWindow(QMainWindow):
         return hw_name
 
     def _setup_bottom_bar(self, parent: QVBoxLayout) -> None:
-        """Create the bottom bar with export button."""
+        """Create the bottom bar with action buttons."""
         self._bottom_bar = bar = QFrame()
         bar.setStyleSheet(
             f"background-color: {cfg.COLOR_PANEL}; border-top: 1px solid {cfg.COLOR_ACCENT};"
@@ -443,14 +320,29 @@ class MainWindow(QMainWindow):
 
         bl.addStretch()
 
-        self._export_btn = QPushButton("Export CSV")
-        self._export_btn.setFixedWidth(90)
-        self._export_btn.setStyleSheet(
+        btn_style_secondary = (
+            f"background-color: transparent; color: {cfg.COLOR_TEXT_SECONDARY}; "
+            f"border: 1px solid {cfg.COLOR_ACCENT}; border-radius: 3px; padding: 3px 10px;"
+        )
+        btn_style_primary = (
             f"background-color: {cfg.COLOR_ACCENT}; color: {cfg.COLOR_TEXT_PRIMARY}; "
             f"border: none; border-radius: 3px; padding: 3px 10px; font-weight: bold;"
         )
-        self._export_btn.clicked.connect(self._export_csv)
+
+        self._reset_minmax_btn = QPushButton("Reset Min/Max")
+        self._reset_minmax_btn.setStyleSheet(btn_style_secondary)
+        self._reset_minmax_btn.clicked.connect(self._reset_min_max)
+        bl.addWidget(self._reset_minmax_btn)
+
+        self._clear_alerts_btn = QPushButton("Clear Alerts")
+        self._clear_alerts_btn.setStyleSheet(btn_style_secondary)
+        self._clear_alerts_btn.clicked.connect(self._clear_alerts)
+        bl.addWidget(self._clear_alerts_btn)
+
+        self._export_btn = QPushButton("Export CSV")
+        self._export_btn.setStyleSheet(btn_style_primary)
         bl.addWidget(self._export_btn)
+        self._export_btn.clicked.connect(self._export_csv)
 
         parent.addWidget(bar)
 
@@ -464,7 +356,7 @@ class MainWindow(QMainWindow):
 
     def _start_theme_watcher(self) -> None:
         """Listen for system theme changes via DBus freedesktop portal."""
-        self._theme_watcher = _ThemeWatcher(self)
+        self._theme_watcher = ThemeWatcher(self)
         self._theme_watcher.theme_changed.connect(self._on_theme_changed)
         self._theme_watcher.start()
 
@@ -483,27 +375,29 @@ class MainWindow(QMainWindow):
 
     def _apply_theme(self) -> None:
         """Re-apply inline styles after a theme switch."""
-        # Header
         self._header.setStyleSheet(
             f"background-color: {cfg.COLOR_PANEL}; border-bottom: 1px solid {cfg.COLOR_ACCENT};"
         )
         for lbl in self._header.findChildren(QLabel):
             lbl.setStyleSheet(f"color: {cfg.COLOR_TEXT_SECONDARY}; background: transparent;")
 
-        # Tree
-        closed_icon, open_icon = _create_branch_icons()
+        closed_icon, open_icon = create_branch_icons()
         self._tree.setStyleSheet(self._build_tree_qss(closed_icon, open_icon))
 
-        # Bottom bar
         self._bottom_bar.setStyleSheet(
             f"background-color: {cfg.COLOR_PANEL}; border-top: 1px solid {cfg.COLOR_ACCENT};"
         )
+        btn_style_secondary = (
+            f"background-color: transparent; color: {cfg.COLOR_TEXT_SECONDARY}; "
+            f"border: 1px solid {cfg.COLOR_ACCENT}; border-radius: 3px; padding: 3px 10px;"
+        )
+        self._reset_minmax_btn.setStyleSheet(btn_style_secondary)
+        self._clear_alerts_btn.setStyleSheet(btn_style_secondary)
         self._export_btn.setStyleSheet(
             f"background-color: {cfg.COLOR_ACCENT}; color: {cfg.COLOR_TEXT_PRIMARY}; "
             f"border: none; border-radius: 3px; padding: 3px 10px; font-weight: bold;"
         )
 
-        # Rebuild type group brushes
         secondary_brush = QBrush(QColor(cfg.COLOR_TEXT_SECONDARY))
         root = self._tree.invisibleRootItem()
         for hw_i in range(root.childCount()):
@@ -517,59 +411,65 @@ class MainWindow(QMainWindow):
         self._poll_count += 1
         hottest_temp = 0.0
         hottest_name = ""
-        log_entry: dict[str, object] = {"timestamp": datetime.now().isoformat()}
+
+        # Build log key order on first cycle
+        if not self._log_keys:
+            self._log_keys = list(readings.keys())
+
+        # Local refs for tight loop
+        sensor_items = self._sensor_items
+        sensor_map = self._sensor_map
+        active = self._active_sensors
+        is_first_pass = self._poll_count <= 3
+        _TEMP = SensorType.TEMPERATURE
+        _TRACK = (SensorType.LOAD, SensorType.FAN, SensorType.POWER)
+        _INF = float("inf")
+        _NINF = float("-inf")
+        values = []
+        vappend = values.append
 
         for key, reading in readings.items():
-            log_entry[reading.name] = reading.current
+            cur = reading.current
+            vappend(cur)
 
-            # Track hottest temperature sensor for alerts
-            if reading.sensor_type == SensorType.TEMPERATURE and reading.current > hottest_temp:
-                hottest_temp = reading.current
-                hottest_name = reading.name.split("|")[-1] if "|" in reading.name else reading.name
+            if reading.sensor_type is _TEMP and cur > hottest_temp:
+                hottest_temp = cur
+                hottest_name = key.rsplit("|", 1)[-1]
 
-            item = self._sensor_items.get(key)
+            item = sensor_items.get(key)
             if item is None:
                 continue
 
-            has_data = reading.current > 0 or reading.sensor_type in (
-                SensorType.LOAD, SensorType.FAN, SensorType.POWER,
-            )
-            if has_data:
-                self._active_sensors.add(key)
+            if is_first_pass:
+                has_data = cur > 0 or reading.sensor_type in _TRACK
+                if has_data:
+                    active.add(key)
+                elif cur == 0 and reading.sensor_type not in _TRACK:
+                    continue
 
-            if not has_data:
+            if not reading.changed:
                 continue
 
-            # Format values with proper units (use sensor's custom format if available)
-            sensor_obj = self._sensor_map.get(key)
+            sensor_obj = sensor_map.get(key)
             if sensor_obj is not None:
-                val_str = sensor_obj.format_reading(reading.current)
-                min_str = sensor_obj.format_reading(reading.min_val) if reading.min_val != float("inf") else "--"
-                max_str = sensor_obj.format_reading(reading.max_val) if reading.max_val != float("-inf") else "--"
+                item.setText(1, sensor_obj.format_reading(cur))
+                item.setText(2, sensor_obj.format_reading(reading.min_val) if reading.min_val != _INF else "--")
+                item.setText(3, sensor_obj.format_reading(reading.max_val) if reading.max_val != _NINF else "--")
             else:
-                val_str = format_value(reading.current, reading.sensor_type)
-                min_str = format_value(reading.min_val, reading.sensor_type) if reading.min_val != float("inf") else "--"
-                max_str = format_value(reading.max_val, reading.sensor_type) if reading.max_val != float("-inf") else "--"
+                st = reading.sensor_type
+                item.setText(1, format_value(cur, st))
+                item.setText(2, format_value(reading.min_val, st) if reading.min_val != _INF else "--")
+                item.setText(3, format_value(reading.max_val, st) if reading.max_val != _NINF else "--")
 
-            item.setText(1, val_str)
-            item.setText(2, min_str)
-            item.setText(3, max_str)
+            if reading.sensor_type is _TEMP:
+                item.setForeground(1, QColor(self._get_temp_color(cur)))
 
-            # Color the value column for temperatures
-            if reading.sensor_type == SensorType.TEMPERATURE:
-                color = QColor(self._get_temp_color(reading.current))
-                item.setForeground(1, color)
-
-        # After 3 polls, hide sensors that never reported data
         if self._poll_count == 3:
             self._hide_inactive_sensors()
-
-        if self._poll_count == 3:
-            count = sum(1 for k in self._sensor_items if k in self._active_sensors)
+            count = sum(1 for k in sensor_items if k in active)
             self._status_label.setText(f"{count} sensors")
 
-        if len(self._temperature_log) < _MAX_LOG_ENTRIES:
-            self._temperature_log.append(log_entry)
+        self._log_data.append((datetime.now().isoformat(), *values))
 
         self._tray_icon.setToolTip(f"ThermalCore — {hottest_name}: {hottest_temp:.0f}°C")
         self._check_alerts(readings)
@@ -580,7 +480,6 @@ class MainWindow(QMainWindow):
             if key not in self._active_sensors:
                 item.setHidden(True)
 
-        # Hide type group nodes with all children hidden
         root = self._tree.invisibleRootItem()
         for hw_idx in range(root.childCount()):
             hw_item = root.child(hw_idx)
@@ -598,6 +497,25 @@ class MainWindow(QMainWindow):
             if not hw_has_visible:
                 hw_item.setHidden(True)
 
+    # --- Reset actions ---
+
+    def _reset_min_max(self) -> None:
+        """Reset min/max tracking for all sensors."""
+        self._poller.reset_min_max()
+        for item in self._sensor_items.values():
+            item.setText(2, "--")
+            item.setText(3, "--")
+        self.statusBar().showMessage("Min/Max values reset", 3000)
+
+    def _clear_alerts(self) -> None:
+        """Remove all configured alert thresholds."""
+        self._alert_thresholds.clear()
+        self._triggered_alerts.clear()
+        for item in self._sensor_items.values():
+            item.setText(4, "")
+            item.setForeground(4, QBrush(QColor(cfg.COLOR_TEXT_PRIMARY)))
+        self.statusBar().showMessage("All alerts cleared", 3000)
+
     # --- Per-metric alerts ---
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int) -> None:
@@ -605,7 +523,6 @@ class MainWindow(QMainWindow):
         if column != 4:
             return
 
-        # Find the sensor key for this item
         key = None
         for k, v in self._sensor_items.items():
             if v is item:
@@ -666,7 +583,9 @@ class MainWindow(QMainWindow):
                         f"{sensor_name}: {val_str} (threshold: {thr_str})",
                         QSystemTrayIcon.MessageIcon.Critical, 5000,
                     )
-                # Color the alert cell red when exceeded
+                    self._broadcaster.send_alert(
+                        sensor_name, reading.current, threshold, unit.strip(),
+                    )
                 item = self._sensor_items.get(key)
                 if item:
                     item.setForeground(4, QBrush(QColor(cfg.COLOR_WARNING)))
@@ -679,8 +598,8 @@ class MainWindow(QMainWindow):
     # --- CSV export ---
 
     def _export_csv(self) -> None:
-        """Export temperature log to CSV."""
-        if not self._temperature_log:
+        """Export sensor log to CSV."""
+        if not self._log_data:
             return
 
         default_name = f"thermalcore_{datetime.now():%Y%m%d_%H%M%S}.csv"
@@ -688,13 +607,13 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        headers = list(self._temperature_log[0].keys())
+        headers = ["timestamp"] + self._log_keys
         with open(path, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=headers)
-            w.writeheader()
-            w.writerows(self._temperature_log)
+            w = csv.writer(f)
+            w.writerow(headers)
+            w.writerows(self._log_data)
 
-        self.statusBar().showMessage(f"Exported {len(self._temperature_log)} records", 5000)
+        self.statusBar().showMessage(f"Exported {len(self._log_data)} records", 5000)
 
     # --- System tray ---
 
@@ -735,6 +654,7 @@ class MainWindow(QMainWindow):
         """Quit the application."""
         self._poller.stop()
         self._theme_watcher.stop()
+        self._broadcaster.stop()
         shutdown_nvml()
         self._tray_icon.hide()
         from PySide6.QtWidgets import QApplication
