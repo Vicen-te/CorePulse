@@ -4,6 +4,10 @@ A lightweight, real-time hardware monitoring application for Linux desktops. Bui
 
 Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup**.
 
+| Full overview with collapsible sections | Per-sensor alerts with desktop notifications |
+|:---:|:---:|
+| ![Overview](assets/screenshots/overview.png) | ![Alerts](assets/screenshots/alerts.png) |
+
 ## Features
 
 **Monitoring**
