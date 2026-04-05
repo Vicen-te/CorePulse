@@ -9,6 +9,7 @@ import psutil
 
 # Local
 from sensors.base_sensor import BaseSensor, SensorType
+from sensors.cpu_sensor import _cache
 
 
 # --- Memory sensors ---
@@ -18,7 +19,8 @@ class MemoryUsedSensor(BaseSensor):
 
     def get_temperature(self) -> float:
         """Return used memory in GB."""
-        return psutil.virtual_memory().used / (1024 ** 3)
+        mem = _cache["mem"]
+        return mem.used / (1024 ** 3) if mem else 0.0
 
     def get_name(self) -> str:
         """Return sensor name."""
@@ -46,7 +48,8 @@ class MemoryAvailableSensor(BaseSensor):
 
     def get_temperature(self) -> float:
         """Return available memory in GB."""
-        return psutil.virtual_memory().available / (1024 ** 3)
+        mem = _cache["mem"]
+        return mem.available / (1024 ** 3) if mem else 0.0
 
     def get_name(self) -> str:
         """Return sensor name."""
@@ -74,7 +77,8 @@ class MemoryLoadSensor(BaseSensor):
 
     def get_temperature(self) -> float:
         """Return memory usage percentage."""
-        return psutil.virtual_memory().percent
+        mem = _cache["mem"]
+        return mem.percent if mem else 0.0
 
     def get_name(self) -> str:
         """Return sensor name."""
@@ -103,11 +107,7 @@ class DiskUsageSensor(BaseSensor):
     """Reports disk usage for a mount point as value / total GB."""
 
     def __init__(self, mountpoint: str) -> None:
-        """Initialize with mount point.
-
-        Args:
-            mountpoint: Filesystem mount point (e.g. "/").
-        """
+        """Initialize with mount point."""
         self._mountpoint = mountpoint
 
     def get_temperature(self) -> float:
@@ -165,11 +165,8 @@ class NvmeTempSensor(BaseSensor):
 
     def get_temperature(self) -> float:
         """Return NVMe temperature in Celsius."""
-        temps = psutil.sensors_temperatures()
-        entries = temps.get(self._sensor_key, [])
-        if self._index < len(entries):
-            return entries[self._index].current
-        return 0.0
+        entries = _cache["temps"].get(self._sensor_key, [])
+        return entries[self._index].current if self._index < len(entries) else 0.0
 
     def get_name(self) -> str:
         """Return sensor name."""
@@ -177,8 +174,7 @@ class NvmeTempSensor(BaseSensor):
 
     def is_available(self) -> bool:
         """Check availability."""
-        temps = psutil.sensors_temperatures()
-        entries = temps.get(self._sensor_key, [])
+        entries = _cache["temps"].get(self._sensor_key, [])
         return self._index < len(entries)
 
     def get_sensor_type(self) -> SensorType:
@@ -203,9 +199,8 @@ def discover_storage_sensors() -> list[BaseSensor]:
     """Discover storage and NVMe sensors."""
     sensors: list[BaseSensor] = []
 
-    # NVMe temperatures — assign drive numbers based on Composite entries
-    temps = psutil.sensors_temperatures()
-    nvme_entries = temps.get("nvme", [])
+    # Reuse cached temps from cpu_sensor discovery (avoids a second ~30ms syscall)
+    nvme_entries = _cache["temps"].get("nvme", [])
     drive_num = 0
     for i, entry in enumerate(nvme_entries):
         raw_label = entry.label if entry.label else f"Sensor {i}"
@@ -214,7 +209,6 @@ def discover_storage_sensors() -> list[BaseSensor]:
         label = f"{raw_label} (Drive {drive_num})"
         sensors.append(NvmeTempSensor("nvme", i, label))
 
-    # Disk usage for real mounted partitions (skip snap/squashfs/tmpfs)
     skip_fs = {"squashfs", "tmpfs", "devtmpfs", "overlay"}
     skip_prefixes = ("/snap/", "/sys/", "/proc/", "/run/", "/dev/")
     seen: set[str] = set()

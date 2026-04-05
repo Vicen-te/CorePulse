@@ -6,7 +6,6 @@ Reads CPU temperatures (psutil/sysfs), clock speeds, and per-core load.
 
 # Standard library
 import glob
-import time
 from pathlib import Path
 
 # Third-party
@@ -15,16 +14,28 @@ import psutil
 # Local
 from sensors.base_sensor import BaseSensor, SensorType
 
+# Shared poll data — refreshed once per cycle by the poller via refresh_caches()
+_cache: dict = {
+    "temps": {},
+    "percpu": [],
+    "freq": 0.0,
+    "mem": None,
+}
+
+
+def refresh_caches() -> None:
+    """Refresh all cached sensor data. Called once per poll cycle by the poller."""
+    _cache["temps"] = psutil.sensors_temperatures()
+    result = psutil.cpu_percent(interval=None, percpu=True)
+    if result:
+        _cache["percpu"] = result
+    freq = psutil.cpu_freq()
+    _cache["freq"] = freq.current if freq else 0.0
+    _cache["mem"] = psutil.virtual_memory()
+
 
 class CpuCoreSensor(BaseSensor):
-    """
-    Reads a single CPU core temperature from psutil coretemp.
-
-    Attributes:
-        label: Human-readable core identifier.
-        high: High temperature threshold from hardware.
-        critical: Critical temperature threshold from hardware.
-    """
+    """Reads a single CPU core temperature from psutil coretemp."""
 
     def __init__(self, label: str, sensor_key: str, index: int,
                  high: float | None = None, critical: float | None = None) -> None:
@@ -37,11 +48,8 @@ class CpuCoreSensor(BaseSensor):
 
     def get_temperature(self) -> float:
         """Return the current core temperature in Celsius."""
-        temps = psutil.sensors_temperatures()
-        entries = temps.get(self._sensor_key, [])
-        if self._index < len(entries):
-            return entries[self._index].current
-        return 0.0
+        entries = _cache["temps"].get(self._sensor_key, [])
+        return entries[self._index].current if self._index < len(entries) else 0.0
 
     def get_name(self) -> str:
         """Return the sensor name."""
@@ -49,8 +57,7 @@ class CpuCoreSensor(BaseSensor):
 
     def is_available(self) -> bool:
         """Check whether this core sensor is still readable."""
-        temps = psutil.sensors_temperatures()
-        entries = temps.get(self._sensor_key, [])
+        entries = _cache["temps"].get(self._sensor_key, [])
         return self._index < len(entries)
 
     def get_sensor_type(self) -> SensorType:
@@ -77,8 +84,7 @@ class CpuSensorFallback(BaseSensor):
     def get_temperature(self) -> float:
         """Return the current temperature in Celsius."""
         try:
-            raw = self._zone_path.read_text().strip()
-            return int(raw) / 1000
+            return int(self._zone_path.read_text().strip()) / 1000
         except (OSError, ValueError):
             return 0.0
 
@@ -100,8 +106,7 @@ class CpuClockSensor(BaseSensor):
 
     def get_temperature(self) -> float:
         """Return the current CPU clock in MHz."""
-        freq = psutil.cpu_freq()
-        return freq.current if freq else 0.0
+        return _cache["freq"]
 
     def get_name(self) -> str:
         """Return the sensor name."""
@@ -124,31 +129,12 @@ class CpuClockSensor(BaseSensor):
         return "Clocks"
 
 
-class _CpuLoadCache:
-    """Shared cache for per-core CPU load to avoid multiple psutil calls per poll cycle."""
-
-    _percpu: list[float] = []
-    _last_poll: float = 0.0
-    _CACHE_TTL: float = 0.5
-
-    @classmethod
-    def get_percpu(cls) -> list[float]:
-        """Return cached per-core CPU load, refreshing if stale."""
-        now = time.monotonic()
-        if now - cls._last_poll > cls._CACHE_TTL:
-            result = psutil.cpu_percent(interval=None, percpu=True)
-            if result:
-                cls._percpu = result
-            cls._last_poll = now
-        return cls._percpu
-
-
 class CpuTotalLoadSensor(BaseSensor):
     """Reads total CPU load percentage."""
 
     def get_temperature(self) -> float:
         """Return total CPU load percentage."""
-        percpu = _CpuLoadCache.get_percpu()
+        percpu = _cache["percpu"]
         return sum(percpu) / len(percpu) if percpu else 0.0
 
     def get_name(self) -> str:
@@ -182,7 +168,7 @@ class CpuCoreLoadSensor(BaseSensor):
 
     def get_temperature(self) -> float:
         """Return this physical core's average load percentage."""
-        percpu = _CpuLoadCache.get_percpu()
+        percpu = _cache["percpu"]
         vals = [percpu[i] for i in self._logical_indices if i < len(percpu)]
         return sum(vals) / len(vals) if vals else 0.0
 
@@ -220,7 +206,6 @@ class CpuPowerSensor(BaseSensor):
         self._last_energy: int | None = None
         self._last_power: float = 0.0
 
-        # Read max range for overflow detection
         range_path = self._energy_path.parent / "max_energy_range_uj"
         try:
             self._max_range = int(range_path.read_text().strip())
@@ -237,8 +222,7 @@ class CpuPowerSensor(BaseSensor):
         if self._last_energy is not None:
             delta = energy - self._last_energy
             if delta < 0 and self._max_range > 0:
-                delta += self._max_range  # handle overflow
-            # energy_uj is in microjoules; POLL_INTERVAL is ~1s
+                delta += self._max_range
             self._last_power = delta / 1_000_000
         self._last_energy = energy
         return self._last_power
@@ -268,15 +252,13 @@ def discover_cpu_sensors() -> list[BaseSensor]:
     """
     Discover all available CPU sensors.
 
-    Returns temperature, clock, load, and power sensors.
-
     Returns:
         A list of BaseSensor instances for each detected CPU sensor.
     """
     sensors: list[BaseSensor] = []
 
-    # --- Temperatures: psutil coretemp ---
     temps = psutil.sensors_temperatures()
+    _cache["temps"] = temps
     cpu_keys = ["coretemp", "k10temp", "zenpower", "cpu_thermal"]
     sensor_key = None
     for key in cpu_keys:
@@ -292,7 +274,6 @@ def discover_cpu_sensors() -> list[BaseSensor]:
                 high=entry.high, critical=entry.critical,
             ))
     else:
-        # Fallback: sysfs thermal zones
         zone_paths = sorted(glob.glob("/sys/class/thermal/thermal_zone*/temp"))
         for zone_path in zone_paths:
             zone_dir = Path(zone_path).parent
@@ -310,16 +291,13 @@ def discover_cpu_sensors() -> list[BaseSensor]:
                 except OSError:
                     continue
 
-    # --- Clock ---
     clock_sensor = CpuClockSensor()
     if clock_sensor.is_available():
         sensors.append(clock_sensor)
 
-    # --- Load: total + per physical core ---
     psutil.cpu_percent(interval=None, percpu=True)
     sensors.append(CpuTotalLoadSensor())
 
-    # Build physical core → logical CPU mapping from /proc/cpuinfo
     core_to_logical: dict[int, list[int]] = {}
     current_proc: int | None = None
     try:
@@ -334,17 +312,13 @@ def discover_cpu_sensors() -> list[BaseSensor]:
         core_to_logical = {}
 
     if core_to_logical:
-        # Create load sensors matching temperature core labels
         for core_id in sorted(core_to_logical):
-            name = f"Core {core_id}"
-            sensors.append(CpuCoreLoadSensor(core_to_logical[core_id], name))
+            sensors.append(CpuCoreLoadSensor(core_to_logical[core_id], f"Core {core_id}"))
     else:
-        # Fallback: one sensor per logical CPU
         logical_count = psutil.cpu_count(logical=True) or 0
         for i in range(logical_count):
             sensors.append(CpuCoreLoadSensor([i], f"Core {i}"))
 
-    # --- Power: Intel RAPL (may need root for read access) ---
     rapl_path = "/sys/class/powercap/intel-rapl:0/energy_uj"
     if Path(rapl_path).exists():
         sensors.append(CpuPowerSensor(rapl_path))
