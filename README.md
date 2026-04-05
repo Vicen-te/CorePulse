@@ -72,70 +72,45 @@ Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup
 
 ## Installation
 
-### Quick install (Ubuntu)
-
 ```bash
 git clone https://github.com/Vicen-te/ThermalCore.git
 cd ThermalCore
-bash setup.sh
+make install
 ```
 
-The script installs system dependencies (`lm-sensors`, `libxcb-cursor0`, `python3-venv`), creates a virtual environment, installs Python packages, sets up persistent CPU power monitoring (Intel RAPL udev rule), and registers the app in your desktop launcher with its icon.
+This installs system dependencies, creates a Python virtual environment, installs packages, configures CPU power monitoring (Intel RAPL), and registers the app in your desktop launcher with its icon.
 
-It requires `sudo` for system packages and the udev rule. It's idempotent — running it again skips completed steps.
+Requires `sudo` for system packages and the udev rule. Running it again skips completed steps.
 
-### Manual install
+### Other distros
 
-```bash
-# System dependencies (Ubuntu/Debian)
-sudo apt install lm-sensors libxcb-cursor0 python3-venv
-sudo sensors-detect
+The Makefile uses `apt`. For other distributions, install the equivalents manually first:
 
-# Clone and setup
-git clone https://github.com/Vicen-te/ThermalCore.git
-cd ThermalCore
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
+| Distro | Command |
+|---|---|
+| Fedora | `sudo dnf install lm_sensors python3-devel && sudo sensors-detect` |
+| Arch | `sudo pacman -S lm_sensors python && sudo sensors-detect` |
 
-For **Fedora**: `sudo dnf install lm_sensors python3-devel` then `sudo sensors-detect`.
-For **Arch**: `sudo pacman -S lm_sensors python` then `sudo sensors-detect`.
+Then run `make venv pip-deps desktop` to skip the apt step.
 
-### CPU power monitoring (optional, Intel only)
+### Other make targets
 
 ```bash
-# Persistent (survives reboots) — setup.sh does this automatically
-echo 'SUBSYSTEM=="powercap", ACTION=="add", RUN+="/bin/chmod o+r /sys/class/powercap/intel-rapl:0/energy_uj"' \
-    | sudo tee /etc/udev/rules.d/99-thermalcore-rapl.rules
-sudo udevadm control --reload-rules
-sudo udevadm trigger --subsystem-match=powercap
-```
-
-Without this, CPU Power shows 0.0 W. The app works normally otherwise.
-
-### Desktop integration (optional)
-
-```bash
-# setup.sh does this automatically
-mkdir -p ~/.local/share/icons/hicolor/scalable/apps
-cp assets/icons/thermalcore.svg ~/.local/share/icons/hicolor/scalable/apps/thermalcore.svg
-gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
-sed "s|__INSTALL_DIR__|$(pwd)|g" thermalcore.desktop > ~/.local/share/applications/thermalcore.desktop
-update-desktop-database ~/.local/share/applications/
+make run          # Launch the app
+make test         # Run unit tests
+make benchmark    # Run performance benchmarks
+make uninstall    # Remove launcher, icon, and udev rule
+make clean        # Delete venv and caches
 ```
 
 ---
 
 ## Usage
 
-Search **ThermalCore** in your app launcher (after running `setup.sh`).
-
-Or from the terminal:
+Search **ThermalCore** in your app launcher, or:
 
 ```bash
-cd ThermalCore
-./thermalcore.sh
+make run
 ```
 
 - **Double-click** the Alert column to set a per-sensor threshold
@@ -147,17 +122,16 @@ cd ThermalCore
 ### Updating
 
 ```bash
-cd ThermalCore && git pull
-source .venv/bin/activate && pip install -r requirements.txt
+cd ThermalCore
+git pull
+make install
 ```
 
 ### Uninstalling
 
 ```bash
-rm ~/.local/share/applications/thermalcore.desktop
-rm ~/.local/share/icons/hicolor/scalable/apps/thermalcore.svg
-sudo rm -f /etc/udev/rules.d/99-thermalcore-rapl.rules
-rm -rf /path/to/ThermalCore
+cd ThermalCore
+make uninstall
 ```
 
 ---
@@ -372,20 +346,17 @@ class MyNewSensor(BaseSensor):
 ### Running tests
 
 ```bash
-source .venv/bin/activate
-
 # Run all 41 unit tests
-python -m pytest tests/ -v
+make test
 
-# Run a specific test file
-python -m pytest tests/test_sensors.py -v
+# Run all performance benchmarks
+make benchmark
 
-# Run a specific test class or method
-python -m pytest tests/test_sensors.py::TestCpuSensors -v
-python -m pytest tests/test_sensors.py::TestFormatValue::test_temperature_format -v
-
-# Run with short output (just pass/fail)
-python -m pytest tests/ -q
+# Or manually for more control:
+source .venv/bin/activate
+python -m pytest tests/test_sensors.py -v                                        # one file
+python -m pytest tests/test_sensors.py::TestCpuSensors -v                        # one class
+python -m pytest tests/test_sensors.py::TestFormatValue::test_temperature_format  # one method
 ```
 
 ### Writing new tests
@@ -419,22 +390,11 @@ class TestMyNewSensor(unittest.TestCase):
 
 ### Running benchmarks
 
-Benchmarks measure real hardware read times — they're not mocked:
-
 ```bash
-source .venv/bin/activate
-
-# Per-sensor read times (identifies slow sensors)
-python -m tests.benchmarks.bench_sensors
-
-# Full poll cycle: avg time, memory usage, CPU overhead %
-python -m tests.benchmarks.bench_polling
-
-# Startup breakdown: import, discovery, Qt init, window creation
-python -m tests.benchmarks.bench_startup
+make benchmark
 ```
 
-If you add a new sensor or change the cache system, run `bench_polling` to make sure the poll cycle stays under 5ms. Anything above that at the default 1s interval means the cache isn't working.
+Benchmarks measure real hardware read times (not mocked). If you add a new sensor or change the cache, run `make benchmark` and check that the poll cycle stays under 5ms.
 
 ### Code standards
 
