@@ -340,6 +340,7 @@ class MainWindow(QMainWindow):
         self._rate_combo.addItem("2s", 2000)
         self._rate_combo.addItem("4s", 4000)
         self._rate_combo.setCurrentIndex(1)
+        self._rate_combo.setMinimumWidth(70)
         self._rate_combo.setStyleSheet(combo_style)
         self._rate_combo.setToolTip("Update rate")
         self._rate_combo.currentIndexChanged.connect(self._on_rate_changed)
