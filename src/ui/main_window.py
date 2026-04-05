@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QFileDialog,
     QHeaderView,
+    QComboBox,
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QColor, QAction, QBrush
@@ -320,6 +321,10 @@ class MainWindow(QMainWindow):
 
         bl.addStretch()
 
+        combo_style = (
+            f"background-color: {cfg.COLOR_PANEL}; color: {cfg.COLOR_TEXT_PRIMARY}; "
+            f"border: 1px solid {cfg.COLOR_ACCENT}; border-radius: 3px; padding: 2px 6px;"
+        )
         btn_style_secondary = (
             f"background-color: transparent; color: {cfg.COLOR_TEXT_SECONDARY}; "
             f"border: 1px solid {cfg.COLOR_ACCENT}; border-radius: 3px; padding: 3px 10px;"
@@ -328,6 +333,17 @@ class MainWindow(QMainWindow):
             f"background-color: {cfg.COLOR_ACCENT}; color: {cfg.COLOR_TEXT_PRIMARY}; "
             f"border: none; border-radius: 3px; padding: 3px 10px; font-weight: bold;"
         )
+
+        self._rate_combo = QComboBox()
+        self._rate_combo.addItem("0.5s", 500)
+        self._rate_combo.addItem("1s", 1000)
+        self._rate_combo.addItem("2s", 2000)
+        self._rate_combo.addItem("4s", 4000)
+        self._rate_combo.setCurrentIndex(1)
+        self._rate_combo.setStyleSheet(combo_style)
+        self._rate_combo.setToolTip("Update rate")
+        self._rate_combo.currentIndexChanged.connect(self._on_rate_changed)
+        bl.addWidget(self._rate_combo)
 
         self._reset_minmax_btn = QPushButton("Reset Min/Max")
         self._reset_minmax_btn.setStyleSheet(btn_style_secondary)
@@ -345,6 +361,12 @@ class MainWindow(QMainWindow):
         self._export_btn.clicked.connect(self._export_csv)
 
         parent.addWidget(bar)
+
+    def _on_rate_changed(self, index: int) -> None:
+        """Handle update rate combobox change."""
+        ms = self._rate_combo.currentData()
+        self._poller.set_interval(ms)
+        self.statusBar().showMessage(f"Update rate: {self._rate_combo.currentText()}", 3000)
 
     # --- Polling ---
 
@@ -390,6 +412,10 @@ class MainWindow(QMainWindow):
         btn_style_secondary = (
             f"background-color: transparent; color: {cfg.COLOR_TEXT_SECONDARY}; "
             f"border: 1px solid {cfg.COLOR_ACCENT}; border-radius: 3px; padding: 3px 10px;"
+        )
+        self._rate_combo.setStyleSheet(
+            f"background-color: {cfg.COLOR_PANEL}; color: {cfg.COLOR_TEXT_PRIMARY}; "
+            f"border: 1px solid {cfg.COLOR_ACCENT}; border-radius: 3px; padding: 2px 6px;"
         )
         self._reset_minmax_btn.setStyleSheet(btn_style_secondary)
         self._clear_alerts_btn.setStyleSheet(btn_style_secondary)

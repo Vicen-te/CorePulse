@@ -69,6 +69,8 @@ class SensorPoller(QThread):
         self._keys: list[str] = []
         self._running = True
 
+        self._interval_ms = POLL_INTERVAL_MS
+
         for sensor in sensors:
             key = self._sensor_key(sensor)
             self._keys.append(key)
@@ -96,7 +98,11 @@ class SensorPoller(QThread):
                 readings[keys[i]].update(sensor.get_temperature())
 
             self.readings_updated.emit(readings)
-            self.msleep(POLL_INTERVAL_MS)
+            self.msleep(self._interval_ms)
+
+    def set_interval(self, ms: int) -> None:
+        """Change the poll interval (takes effect next cycle)."""
+        self._interval_ms = ms
 
     def reset_min_max(self) -> None:
         """Reset min/max values for all readings."""
