@@ -42,32 +42,44 @@ in real time. Qt window with a dark theme, tree view, alerts, and CSV export.
 
 ```
 ThermalCore/
-├── PROGRESS.md
-├── CONVENTIONS.md
 ├── README.md
 ├── requirements.txt
 ├── setup.sh
+├── thermalcore.sh           # Launcher script
+├── thermalcore.desktop      # Desktop integration
 ├── pyproject.toml
+├── docs/
+│   ├── INSTALL.md           # Installation guide
+│   ├── DEVELOPMENT.md       # Development log
+│   ├── CONVENTIONS.md       # Code standards
+│   └── PROGRESS.md          # Version history
 ├── src/
-│   ├── __init__.py
 │   ├── main.py              # Entry point
 │   ├── app.py               # QApplication setup
 │   ├── sensors/
-│   │   ├── __init__.py
-│   │   ├── base_sensor.py   # Abstract base class + SensorType enum
+│   │   ├── base_sensor.py   # Abstract base + SensorType enum
 │   │   ├── cpu_sensor.py    # CPU temp, clock, load, power
 │   │   ├── gpu_sensor.py    # NVIDIA (pynvml) + AMD (sysfs)
 │   │   ├── system_sensor.py # Memory, storage, NVMe temps
 │   │   └── poller.py        # Background QThread polling
 │   ├── ui/
-│   │   ├── __init__.py
-│   │   ├── main_window.py   # 3-level tree view
-│   │   └── styles.py        # QSS dark theme
+│   │   ├── main_window.py   # 3-level tree view + alerts
+│   │   ├── icons.py         # App icon + tree branch arrows
+│   │   ├── system_info.py   # Header bar system info
+│   │   ├── theme_watcher.py # DBus theme change listener
+│   │   └── styles.py        # Auto dark/light theme (QSS)
 │   └── utils/
-│       ├── __init__.py
-│       └── config.py        # Constants and config
+│       └── config.py        # Constants, palettes, theme detection
+├── tests/
+│   ├── test_sensors.py      # Sensor unit tests
+│   ├── test_config.py       # Config/theme tests
+│   └── benchmarks/
+│       ├── bench_sensors.py # Per-sensor read times
+│       ├── bench_polling.py # Poll cycle performance
+│       └── bench_startup.py # Startup time breakdown
 └── assets/
     └── icons/
+        └── thermalcore.svg  # App icon
 ```
 
 ---

@@ -1,7 +1,7 @@
 # Project Progress
 
 ## Status: COMPLETED
-## Last Commit: fix: persistent RAPL permissions via udev rule
+## Last Commit: refactor: extract UI modules, add tests and benchmarks
 ## Last Updated: 2026-04-05
 
 ---
@@ -87,12 +87,35 @@
 - [x] Auto-detect system theme (GNOME gsettings: color-scheme and gtk-theme)
 - [x] Light theme colors for light system preference
 - [x] Defaults to dark if detection fails
-- [x] setup.sh enables RAPL read permissions for CPU power monitoring
+- [x] Live theme switching via DBus signal watcher (no polling)
 
 ### v2.8 — Persistent Setup (completed 2026-04-05)
 
 - [x] RAPL permissions persist across reboots via udev rule (99-thermalcore-rapl.rules)
 - [x] setup.sh is run-once: detects if already configured
+
+### v2.9 — Ubuntu Theme & Desktop Integration Fix (completed 2026-04-05)
+
+- [x] Dark/light palettes updated to Ubuntu colors (orange #e95420, grey tones)
+- [x] App icon redesigned: thermometer on rounded square (Ubuntu style), replaces old red ring/green circle
+- [x] Icon loads from SVG asset instead of programmatic drawing
+- [x] Desktop file fixed: invalid Exec with unescaped chars replaced by launcher script (thermalcore.sh)
+- [x] Desktop file validated (desktop-file-validate passes)
+- [x] StartupWMClass=thermalcore added for GNOME dock matching
+- [x] setDesktopFileName("thermalcore") added for Wayland/X11 integration
+- [x] Icon installed to ~/.local/share/icons/hicolor/scalable/apps/ for proper GNOME discovery
+- [x] setup.sh updated to install icon to standard XDG location
+
+### v3.0 — Refactoring, Tests & Benchmarks (completed 2026-04-05)
+
+- [x] Extract ThemeWatcher from main_window.py into ui/theme_watcher.py
+- [x] Extract icon creation into ui/icons.py
+- [x] Extract system info gathering into ui/system_info.py
+- [x] main_window.py reduced from 760 to 580 lines (pure UI logic)
+- [x] Move documentation to docs/ folder (INSTALL, DEVELOPMENT, CONVENTIONS, PROGRESS)
+- [x] 41 unit tests: sensor interface, format values, CPU/GPU/memory/storage, config/palettes
+- [x] 3 performance benchmarks: per-sensor reads, poll cycle overhead, startup time
+- [x] All 41 tests passing, app startup in 0.4s, ~50MB memory
 
 ### Known Issues
 
