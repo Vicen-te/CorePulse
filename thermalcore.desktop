@@ -2,9 +2,10 @@
 Type=Application
 Name=ThermalCore
 Comment=Real-time CPU and GPU temperature monitor
-Exec=bash -c 'cd __INSTALL_DIR__ && source .venv/bin/activate && python src/main.py'
-Icon=__INSTALL_DIR__/assets/icons/thermalcore.svg
+Exec=__INSTALL_DIR__/thermalcore.sh
+Icon=thermalcore
 Categories=System;Monitor;
 Terminal=false
 StartupNotify=true
+StartupWMClass=thermalcore
 Keywords=temperature;monitor;cpu;gpu;hardware;

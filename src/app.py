@@ -2,7 +2,7 @@
 QApplication factory for ThermalCore.
 
 Creates and configures the PySide6 application instance
-with the dark theme and main window.
+with the system-matched theme and main window.
 """
 
 # Standard library
@@ -26,6 +26,7 @@ def create_app() -> tuple[QApplication, MainWindow]:
     app = QApplication(sys.argv)
     app.setApplicationName("ThermalCore")
     app.setOrganizationName("ThermalCore")
+    app.setDesktopFileName("thermalcore")
     app.setStyleSheet(THEME_QSS)
 
     window = MainWindow()

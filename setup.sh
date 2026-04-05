@@ -49,9 +49,11 @@ fi
 # Install desktop launcher
 echo "[*] Installing desktop launcher..."
 DESKTOP_DIR="$HOME/.local/share/applications"
-mkdir -p "$DESKTOP_DIR"
+ICON_DIR="$HOME/.local/share/icons/hicolor/scalable/apps"
+mkdir -p "$DESKTOP_DIR" "$ICON_DIR"
+cp "$SCRIPT_DIR/assets/icons/thermalcore.svg" "$ICON_DIR/thermalcore.svg"
+gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 sed "s|__INSTALL_DIR__|$SCRIPT_DIR|g" "$SCRIPT_DIR/thermalcore.desktop" > "$DESKTOP_DIR/thermalcore.desktop"
-chmod +x "$DESKTOP_DIR/thermalcore.desktop"
 update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
 echo ""

@@ -13,6 +13,7 @@ from app import create_app
 
 def main() -> None:
     """Start the ThermalCore application."""
+    sys.argv[0] = "thermalcore"
     app, _window = create_app()
     sys.exit(app.exec())
 

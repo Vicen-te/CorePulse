@@ -24,29 +24,29 @@ CRITICAL_TEMP_THRESHOLD: int = 85
 
 # --- Theme palettes ---
 DARK_PALETTE: dict[str, str] = {
-    "background": "#1a1a2e",
-    "panel": "#16213e",
-    "accent": "#0f3460",
-    "warning": "#e94560",
-    "text_primary": "#eeeeee",
-    "text_secondary": "#aaaaaa",
-    "temp_cool": "#00c853",
-    "temp_warm": "#ffd600",
-    "temp_hot": "#ff6d00",
-    "temp_critical": "#e94560",
+    "background": "#2b2b2b",
+    "panel": "#333333",
+    "accent": "#444444",
+    "warning": "#e95420",
+    "text_primary": "#f0f0f0",
+    "text_secondary": "#999999",
+    "temp_cool": "#73d216",
+    "temp_warm": "#f5c211",
+    "temp_hot": "#e95420",
+    "temp_critical": "#cc0000",
 }
 
 LIGHT_PALETTE: dict[str, str] = {
-    "background": "#f5f5f5",
-    "panel": "#e0e0e0",
-    "accent": "#bdbdbd",
-    "warning": "#d32f2f",
-    "text_primary": "#1a1a1a",
-    "text_secondary": "#555555",
-    "temp_cool": "#2e7d32",
-    "temp_warm": "#f57f17",
-    "temp_hot": "#e65100",
-    "temp_critical": "#c62828",
+    "background": "#fafafa",
+    "panel": "#ebebeb",
+    "accent": "#d6d6d6",
+    "warning": "#e95420",
+    "text_primary": "#1c1c1c",
+    "text_secondary": "#666666",
+    "temp_cool": "#3a7d34",
+    "temp_warm": "#e6a003",
+    "temp_hot": "#c7400a",
+    "temp_critical": "#a40e0e",
 }
 
 
