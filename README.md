@@ -72,19 +72,43 @@ Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup
 
 ## Installation
 
+### From .deb package (recommended)
+
+Download the `.deb` from the [releases page](https://github.com/Vicen-te/ThermalCore/releases) and install:
+
+```bash
+sudo apt install ./thermalcore_3.0.0_amd64.deb
+```
+
+This installs ThermalCore system-wide to `/opt/thermalcore/`, creates the Python environment, configures CPU power monitoring, and adds it to your app launcher. Search **ThermalCore** in your apps or run `thermalcore` from the terminal.
+
+To uninstall:
+
+```bash
+sudo apt remove thermalcore
+```
+
+### From source
+
 ```bash
 git clone https://github.com/Vicen-te/ThermalCore.git
 cd ThermalCore
 make install
 ```
 
-This installs system dependencies, creates a Python virtual environment, installs packages, configures CPU power monitoring (Intel RAPL), and registers the app in your desktop launcher with its icon.
-
-Requires `sudo` for system packages and the udev rule. Running it again skips completed steps.
+| Command | Action |
+|---|---|
+| `make install` | Install deps, venv, pip packages, RAPL, desktop launcher |
+| `make run` | Launch the app |
+| `make test` | Run unit tests |
+| `make benchmark` | Run performance benchmarks |
+| `make deb` | Build the `.deb` package |
+| `make uninstall` | Remove launcher, icon, and udev rule |
+| `make clean` | Delete venv and caches |
 
 ### Other distros
 
-The Makefile uses `apt`. For other distributions, install the equivalents manually first:
+The Makefile uses `apt`. For Fedora/Arch, install dependencies manually first:
 
 | Distro | Command |
 |---|---|
@@ -93,24 +117,15 @@ The Makefile uses `apt`. For other distributions, install the equivalents manual
 
 Then run `make venv pip-deps desktop` to skip the apt step.
 
-### Other make targets
-
-```bash
-make run          # Launch the app
-make test         # Run unit tests
-make benchmark    # Run performance benchmarks
-make uninstall    # Remove launcher, icon, and udev rule
-make clean        # Delete venv and caches
-```
-
 ---
 
 ## Usage
 
-Search **ThermalCore** in your app launcher, or:
+Search **ThermalCore** in your app launcher, or from the terminal:
 
 ```bash
-make run
+thermalcore          # if installed via .deb
+make run             # if installed from source
 ```
 
 - **Double-click** the Alert column to set a per-sensor threshold

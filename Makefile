@@ -1,4 +1,4 @@
-.PHONY: install uninstall run test benchmark clean
+.PHONY: install uninstall run test benchmark deb clean
 
 SHELL      := /bin/bash
 PREFIX     := $(shell pwd)
@@ -82,6 +82,11 @@ benchmark:
 	@$(VENV)/bin/python -m tests.benchmarks.bench_polling
 	@echo "---"
 	@$(VENV)/bin/python -m tests.benchmarks.bench_startup
+
+# ── Package ──────────────────────────────────────────────────────────
+
+deb:
+	@bash packaging/build-deb.sh
 
 # ── Clean ────────────────────────────────────────────────────────────
 
