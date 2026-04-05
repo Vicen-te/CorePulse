@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QColor, QAction, QBrush
+from PySide6.QtGui import QFont, QColor, QAction, QBrush, QShortcut, QKeySequence
 
 # Local
 import utils.config as cfg
@@ -97,6 +97,7 @@ class MainWindow(QMainWindow):
         self._broadcaster.start()
         self._discover_sensors()
         self._setup_ui()
+        self._setup_keyboard_shortcuts()
         self._setup_system_tray()
         self._start_polling()
         self._start_theme_watcher()
@@ -362,6 +363,13 @@ class MainWindow(QMainWindow):
         self._export_btn.clicked.connect(self._export_csv)
 
         parent.addWidget(bar)
+
+    def _setup_keyboard_shortcuts(self) -> None:
+        """Register global keyboard shortcuts."""
+        QShortcut(QKeySequence("Ctrl+E"), self, self._export_csv)
+        QShortcut(QKeySequence("Ctrl+R"), self, self._reset_min_max)
+        QShortcut(QKeySequence("Ctrl+D"), self, self._clear_alerts)
+        QShortcut(QKeySequence("Ctrl+Q"), self, self._quit_app)
 
     def _on_rate_changed(self, index: int) -> None:
         """Handle update rate combobox change."""
