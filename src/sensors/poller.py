@@ -14,6 +14,9 @@ from PySide6.QtCore import QThread, Signal
 from sensors.base_sensor import BaseSensor, SensorType
 from sensors.cpu_sensor import refresh_caches
 from utils.config import POLL_INTERVAL_MS
+from utils.logger import get_logger
+
+log = get_logger("corepulse.poller")
 
 _TRACK_ZERO_TYPES = frozenset({SensorType.LOAD, SensorType.FAN, SensorType.POWER})
 
@@ -95,7 +98,10 @@ class SensorPoller(QThread):
             for i, sensor in enumerate(sensors):
                 if not self._running:
                     break
-                readings[keys[i]].update(sensor.get_temperature())
+                try:
+                    readings[keys[i]].update(sensor.get_temperature())
+                except Exception:
+                    log.exception("Sensor read failed: %s", keys[i])
 
             self.readings_updated.emit(readings)
             self.msleep(self._interval_ms)

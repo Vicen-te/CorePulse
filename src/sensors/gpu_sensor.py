@@ -11,6 +11,9 @@ from pathlib import Path
 
 # Local
 from sensors.base_sensor import BaseSensor, SensorType
+from utils.logger import get_logger
+
+log = get_logger("corepulse.gpu")
 
 try:
     import pynvml
@@ -33,6 +36,7 @@ def _ensure_nvml() -> bool:
         _nvml_initialized = True
         return True
     except pynvml.NVMLError:
+        log.warning("NVML initialization failed — NVIDIA GPU monitoring unavailable")
         return False
 
 
