@@ -3,7 +3,6 @@
 > **IMPORTANT**: This file is your single source of truth.
 > Read it ENTIRELY before doing anything.
 > If you lose track, come back here.
-> If the session drops and you return, read this file and then `PROGRESS.md`.
 
 ---
 
@@ -16,15 +15,14 @@ in real time. Qt window with a dark theme, tree view, alerts, and CSV export.
 
 ## Rules you MUST always follow
 
-1. **Commit + push after every completed step.** Follow the conventions in `CONVENTIONS.md`.
-2. **Update `PROGRESS.md`** after every commit. Mark the step as completed, update the status, and note the date.
-3. **All comments, docstrings, and variable names in English.** Follow the commenting rules in `CONVENTIONS.md`.
-4. **Type hints on every function.**
-5. **Run the code after every step** to verify it works. Never commit broken code.
-6. **If something fails 3 times in a row**: commit with `WIP:` in the message, document the error in PROGRESS.md under "Known Issues", and move on to the next step.
-7. **Never ask the user anything.** Make decisions yourself and keep going.
-8. **If there is no GPU**, display "No GPU detected" gracefully. No crashes.
-9. **If you are resuming a session**, the first thing you do is read this file and PROGRESS.md to find out where to pick up.
+1. **Commit + push after every completed step.** Follow `docs/COMMIT_STANDARDS.md`.
+2. **All comments, docstrings, and variable names in English.** Follow `docs/CODING_STANDARDS.md`.
+3. **Type hints on every function.**
+4. **Run the code after every step** to verify it works. Never commit broken code.
+5. **If something fails 3 times in a row**: commit with `WIP:` in the message, document the error in Known Issues (README.md), and move on.
+6. **Never ask the user anything.** Make decisions yourself and keep going.
+7. **If there is no GPU**, display "No GPU detected" gracefully. No crashes.
+8. **If you are resuming a session**, read this file first, then `git log --oneline -10` to see where you are.
 
 ---
 
@@ -42,85 +40,50 @@ in real time. Qt window with a dark theme, tree view, alerts, and CSV export.
 
 ```
 ThermalCore/
-├── README.md
+├── README.md                    # Everything: install, usage, architecture, contributing
+├── CLAUDE.md                    # This file (AI agent instructions)
 ├── requirements.txt
-├── setup.sh
-├── thermalcore.sh           # Launcher script
-├── thermalcore.desktop      # Desktop integration
+├── setup.sh                     # One-command installer
+├── thermalcore.sh               # Launcher script
+├── thermalcore.desktop          # Desktop integration
 ├── pyproject.toml
 ├── docs/
-│   ├── INSTALL.md           # Installation guide
-│   ├── DEVELOPMENT.md       # Development log
-│   ├── CONVENTIONS.md       # Code standards
-│   └── PROGRESS.md          # Version history
+│   ├── CODING_STANDARDS.md      # How to write code
+│   └── COMMIT_STANDARDS.md      # How to make commits
 ├── src/
-│   ├── main.py              # Entry point
-│   ├── app.py               # QApplication setup
+│   ├── main.py                  # Entry point
+│   ├── app.py                   # QApplication setup
 │   ├── sensors/
-│   │   ├── base_sensor.py   # Abstract base + SensorType enum
-│   │   ├── cpu_sensor.py    # CPU temp, clock, load, power
-│   │   ├── gpu_sensor.py    # NVIDIA (pynvml) + AMD (sysfs)
-│   │   ├── system_sensor.py # Memory, storage, NVMe temps
-│   │   └── poller.py        # Background QThread polling
+│   │   ├── base_sensor.py       # Abstract base + SensorType enum
+│   │   ├── cpu_sensor.py        # CPU temp, clock, load, power + shared cache
+│   │   ├── gpu_sensor.py        # NVIDIA (pynvml) + AMD (sysfs)
+│   │   ├── system_sensor.py     # Memory, storage, NVMe temps
+│   │   └── poller.py            # Background QThread polling
 │   ├── ui/
-│   │   ├── main_window.py   # 3-level tree view + alerts
-│   │   ├── icons.py         # App icon + tree branch arrows
-│   │   ├── system_info.py   # Header bar system info
-│   │   ├── theme_watcher.py # DBus theme change listener
-│   │   └── styles.py        # Auto dark/light theme (QSS)
+│   │   ├── main_window.py       # 3-level tree view + alerts
+│   │   ├── icons.py             # App icon + tree branch arrows
+│   │   ├── system_info.py       # Header bar system info
+│   │   ├── theme_watcher.py     # DBus theme change listener
+│   │   └── styles.py            # Auto dark/light theme (QSS)
 │   └── utils/
-│       └── config.py        # Constants, palettes, theme detection
+│       ├── config.py            # Constants, palettes, theme detection
+│       └── ipc.py               # Unix socket alert broadcaster
 ├── tests/
-│   ├── test_sensors.py      # Sensor unit tests
-│   ├── test_config.py       # Config/theme tests
-│   └── benchmarks/
-│       ├── bench_sensors.py # Per-sensor read times
-│       ├── bench_polling.py # Poll cycle performance
-│       └── bench_startup.py # Startup time breakdown
-└── assets/
-    └── icons/
-        └── thermalcore.svg  # App icon
+│   ├── test_sensors.py          # Sensor unit tests
+│   ├── test_config.py           # Config/theme tests
+│   └── benchmarks/              # Performance benchmarks
+├── examples/
+│   ├── alert_watcher.py         # CLI alert reactor
+│   └── demo_app.py              # GUI auto-close on alert
+└── assets/icons/
+    └── thermalcore.svg          # App icon
 ```
 
 ---
 
 ## Recovery Protocol
 
-If you are reading this at the start of a session and the project already has work done:
-
-1. Read `PROGRESS.md` — it tells you which step you are on.
-2. Run `git log --oneline -10` — check the latest commits.
-3. Run the current code (`python src/main.py`) to see its state.
-4. Resume from the step marked as "In Progress" or the first uncompleted one.
-5. Keep working. Do not ask.
-
----
-
-## Emergency Protocol (repeated failures)
-
-If you have failed 3 times on the same error:
-
-1. `git add -A && git commit -m "WIP: [current step] - blocked by [error description]"`
-2. `git push`
-3. Document in PROGRESS.md under "Known Issues":
-   - Which step
-   - Exact error message
-   - What you tried
-4. Move on to the next step.
-
----
-
-## Final Verification
-
-When ALL steps are done:
-
-1. Run `python src/main.py` and verify:
-   - Window opens without errors
-   - Sensors detected and showing data
-   - Tree view updating
-   - CSV export functional
-   - System tray functional
-2. Run `pip check` for dependencies.
-3. Mark PROGRESS.md status as `COMPLETED`.
-4. Commit: `chore: mark project as completed`
-5. Final push.
+1. Run `git log --oneline -10` — check recent commits.
+2. Run `python src/main.py` to see the current state.
+3. Resume from whatever the user asks or the last unfinished work.
+4. Keep working. Do not ask.
