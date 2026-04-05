@@ -1,5 +1,5 @@
 """
-QApplication factory for ThermalCore.
+QApplication factory for CorePulse.
 
 Creates and configures the PySide6 application instance
 with the system-matched theme and main window.
@@ -24,9 +24,9 @@ def create_app() -> tuple[QApplication, MainWindow]:
         A tuple of the configured QApplication and MainWindow.
     """
     app = QApplication(sys.argv)
-    app.setApplicationName("ThermalCore")
-    app.setOrganizationName("ThermalCore")
-    app.setDesktopFileName("thermalcore")
+    app.setApplicationName("CorePulse")
+    app.setOrganizationName("CorePulse")
+    app.setDesktopFileName("corepulse")
     app.setStyleSheet(THEME_QSS)
 
     window = MainWindow()

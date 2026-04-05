@@ -2,7 +2,7 @@
 Unit tests for configuration and theme detection.
 
 Usage:
-    cd ThermalCore
+    cd CorePulse
     source .venv/bin/activate
     python -m pytest tests/test_config.py -v
 """

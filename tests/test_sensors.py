@@ -5,7 +5,7 @@ Verifies that all sensor classes return valid data, implement
 the BaseSensor interface correctly, and handle edge cases.
 
 Usage:
-    cd ThermalCore
+    cd CorePulse
     source .venv/bin/activate
     python -m pytest tests/test_sensors.py -v
 """

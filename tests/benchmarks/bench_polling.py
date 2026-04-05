@@ -6,7 +6,7 @@ reads all sensors and measures total cycle time, memory usage,
 and CPU overhead.
 
 Usage:
-    cd ThermalCore
+    cd CorePulse
     source .venv/bin/activate
     python -m tests.bench_polling
 """

@@ -1,1 +1,1 @@
-"""UI components for the ThermalCore monitoring interface."""
+"""UI components for the CorePulse monitoring interface."""

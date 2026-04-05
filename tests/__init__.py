@@ -1,1 +1,1 @@
-"""ThermalCore tests and benchmarks."""
+"""CorePulse tests and benchmarks."""

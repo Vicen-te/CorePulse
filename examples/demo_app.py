@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """
-Demo: simple app that auto-closes when ThermalCore sends an alert.
+Demo: simple app that auto-closes when CorePulse sends an alert.
 
-Opens a small window with a status label. When ThermalCore fires
+Opens a small window with a status label. When CorePulse fires
 an alert (any sensor exceeds its threshold), this app receives the
 event and closes itself — simulating a workload that should stop
 when the system overheats.
 
 Usage:
-    # Terminal 1: run ThermalCore
-    ./thermalcore.sh
+    # Terminal 1: run CorePulse
+    ./corepulse.sh
 
     # Terminal 2: run this demo
     python examples/demo_app.py
 
-    # Set a low alert threshold in ThermalCore (e.g. 40°C on any sensor)
+    # Set a low alert threshold in CorePulse (e.g. 40°C on any sensor)
     # and watch this app close automatically when the alert fires.
 """
 
@@ -26,11 +26,11 @@ import threading
 from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt, Signal, QObject
 
-SOCKET_PATH = "/tmp/thermalcore.sock"
+SOCKET_PATH = "/tmp/corepulse.sock"
 
 
 class AlertListener(QObject):
-    """Listens for ThermalCore alerts in a background thread."""
+    """Listens for CorePulse alerts in a background thread."""
 
     alert_received = Signal(str)
     connection_lost = Signal()
@@ -41,7 +41,7 @@ class AlertListener(QObject):
         thread.start()
 
     def _listen(self) -> None:
-        """Connect to ThermalCore and listen for events."""
+        """Connect to CorePulse and listen for events."""
         try:
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             sock.connect(SOCKET_PATH)
@@ -69,16 +69,16 @@ class AlertListener(QObject):
 
 
 class DemoWindow(QWidget):
-    """Simple window that closes on ThermalCore alert."""
+    """Simple window that closes on CorePulse alert."""
 
     def __init__(self) -> None:
         """Initialize the demo window."""
         super().__init__()
-        self.setWindowTitle("Demo App — ThermalCore Watcher")
+        self.setWindowTitle("Demo App — CorePulse Watcher")
         self.setFixedSize(400, 150)
 
         layout = QVBoxLayout(self)
-        self._status = QLabel("Connecting to ThermalCore...")
+        self._status = QLabel("Connecting to CorePulse...")
         self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status.setStyleSheet("font-size: 16px; padding: 20px;")
         layout.addWidget(self._status)
@@ -96,8 +96,8 @@ class DemoWindow(QWidget):
         QTimer.singleShot(2000, QApplication.quit)
 
     def _on_disconnected(self) -> None:
-        """Handle ThermalCore not running."""
-        self._status.setText("ThermalCore not running.\nStart it and restart this demo.")
+        """Handle CorePulse not running."""
+        self._status.setText("CorePulse not running.\nStart it and restart this demo.")
         self._status.setStyleSheet("font-size: 14px; padding: 20px; color: orange;")
 
 
@@ -112,7 +112,7 @@ def main() -> None:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.connect(SOCKET_PATH)
         sock.close()
-        window._status.setText("Connected to ThermalCore.\nWaiting for alert...")
+        window._status.setText("Connected to CorePulse.\nWaiting for alert...")
         window._status.setStyleSheet("font-size: 16px; padding: 20px; color: green;")
     except (FileNotFoundError, ConnectionRefusedError):
         pass

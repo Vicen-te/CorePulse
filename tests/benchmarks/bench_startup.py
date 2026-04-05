@@ -5,7 +5,7 @@ Measures the time each startup phase takes: import, sensor discovery,
 and UI initialization. Helps identify bottlenecks in app launch time.
 
 Usage:
-    cd ThermalCore
+    cd CorePulse
     source .venv/bin/activate
     python -m tests.bench_startup
 """

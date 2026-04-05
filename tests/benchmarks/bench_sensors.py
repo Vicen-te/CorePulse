@@ -5,7 +5,7 @@ Measures the time each sensor takes to read a value, identifying
 slow sensors that could affect polling throughput.
 
 Usage:
-    cd ThermalCore
+    cd CorePulse
     source .venv/bin/activate
     python -m tests.bench_sensors
 """

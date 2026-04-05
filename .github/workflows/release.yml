@@ -23,5 +23,5 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: thermalcore_${{ steps.version.outputs.version }}_amd64.deb
+          files: corepulse_${{ steps.version.outputs.version }}_amd64.deb
           generate_release_notes: true

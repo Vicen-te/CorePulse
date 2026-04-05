@@ -1,1 +1,1 @@
-"""ThermalCore HW Monitor — real-time CPU and GPU temperature monitoring."""
+"""CorePulse HW Monitor — real-time CPU and GPU temperature monitoring."""

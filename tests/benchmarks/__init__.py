@@ -1,1 +1,1 @@
-"""ThermalCore performance tests."""
+"""CorePulse performance tests."""

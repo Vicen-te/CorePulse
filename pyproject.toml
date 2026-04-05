@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "thermalcore"
+name = "corepulse"
 version = "1.0.0"
 description = "Real-time CPU and GPU temperature monitor for Linux"
 readme = "README.md"
@@ -32,14 +32,14 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Vicen-te/ThermalCore"
-Repository = "https://github.com/Vicen-te/ThermalCore"
+Homepage = "https://github.com/Vicen-te/CorePulse"
+Repository = "https://github.com/Vicen-te/CorePulse"
 
 [project.scripts]
-thermalcore = "main:main"
+corepulse = "main:main"
 
 [project.gui-scripts]
-thermalcore-gui = "main:main"
+corepulse-gui = "main:main"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]

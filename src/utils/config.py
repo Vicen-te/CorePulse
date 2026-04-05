@@ -11,7 +11,7 @@ import subprocess
 # --- Window defaults ---
 DEFAULT_WINDOW_WIDTH: int = 800
 DEFAULT_WINDOW_HEIGHT: int = 600
-WINDOW_TITLE: str = "ThermalCore — HW Monitor"
+WINDOW_TITLE: str = "CorePulse — HW Monitor"
 
 # --- Polling ---
 POLL_INTERVAL_MS: int = 1000

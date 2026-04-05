@@ -1,5 +1,5 @@
 """
-QSS theme stylesheet for ThermalCore.
+QSS theme stylesheet for CorePulse.
 
 Colors adapt automatically to the system dark/light preference
 and switch live when the system theme changes.

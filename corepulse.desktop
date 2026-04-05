@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=ThermalCore
+Name=CorePulse
 Comment=Real-time CPU and GPU temperature monitor
-Exec=__INSTALL_DIR__/thermalcore.sh
-Icon=thermalcore
+Exec=__INSTALL_DIR__/corepulse.sh
+Icon=corepulse
 Categories=System;Monitor;
 Terminal=false
 StartupNotify=true
-StartupWMClass=thermalcore
+StartupWMClass=corepulse
 Keywords=temperature;monitor;cpu;gpu;hardware;

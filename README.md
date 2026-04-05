@@ -1,4 +1,4 @@
-# ThermalCore — HW Monitor
+# CorePulse — HW Monitor
 
 A lightweight, real-time hardware monitoring application for Linux desktops. Built with **Python** and **Qt6** ([PySide6](https://doc.qt.io/qtforpython-6/)), it reads CPU, GPU, memory, and storage sensors and displays them in a tree view with live updates, per-sensor alerts, and CSV export.
 
@@ -28,7 +28,7 @@ Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup
 - Export CSV: save all recorded sensor data with timestamps
 
 **IPC**
-- Unix socket at `/tmp/thermalcore.sock` broadcasts alert events as JSON
+- Unix socket at `/tmp/corepulse.sock` broadcasts alert events as JSON
 - External apps can connect and react to overheating (e.g., auto-shutdown workloads)
 - See `examples/` for demo apps
 
@@ -74,25 +74,25 @@ Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup
 
 ### From .deb package (recommended)
 
-Download the `.deb` from the [releases page](https://github.com/Vicen-te/ThermalCore/releases) and install:
+Download the `.deb` from the [releases page](https://github.com/Vicen-te/CorePulse/releases) and install:
 
 ```bash
-sudo apt install ./thermalcore_1.0.0_amd64.deb
+sudo apt install ./corepulse_1.0.0_amd64.deb
 ```
 
-This installs ThermalCore system-wide to `/opt/thermalcore/`, creates the Python environment, configures CPU power monitoring, and adds it to your app launcher. Search **ThermalCore** in your apps or run `thermalcore` from the terminal.
+This installs CorePulse system-wide to `/opt/corepulse/`, creates the Python environment, configures CPU power monitoring, and adds it to your app launcher. Search **CorePulse** in your apps or run `corepulse` from the terminal.
 
 To uninstall:
 
 ```bash
-sudo apt remove thermalcore
+sudo apt remove corepulse
 ```
 
 ### From source
 
 ```bash
-git clone https://github.com/Vicen-te/ThermalCore.git
-cd ThermalCore
+git clone https://github.com/Vicen-te/CorePulse.git
+cd CorePulse
 make install
 ```
 
@@ -121,10 +121,10 @@ Then run `make venv pip-deps desktop` to skip the apt step.
 
 ## Usage
 
-Search **ThermalCore** in your app launcher, or from the terminal:
+Search **CorePulse** in your app launcher, or from the terminal:
 
 ```bash
-thermalcore          # if installed via .deb
+corepulse          # if installed via .deb
 make run             # if installed from source
 ```
 
@@ -137,7 +137,7 @@ make run             # if installed from source
 ### Updating
 
 ```bash
-cd ThermalCore
+cd CorePulse
 git pull
 make install
 ```
@@ -145,7 +145,7 @@ make install
 ### Uninstalling
 
 ```bash
-cd ThermalCore
+cd CorePulse
 make uninstall
 ```
 
@@ -164,7 +164,7 @@ make uninstall
 | AMD GPU | sysfs hwmon | Reads `/sys/class/drm/card*/device/hwmon/*/temp1_input` |
 | Memory/disk | [psutil](https://github.com/giampaolo/psutil) | `virtual_memory()`, `disk_usage()`, `disk_partitions()` |
 | Theme | gsettings + DBus | Reads GNOME `color-scheme`, watches for live changes via `gdbus monitor` |
-| IPC | Unix domain socket | JSON-line protocol at `/tmp/thermalcore.sock` |
+| IPC | Unix domain socket | JSON-line protocol at `/tmp/corepulse.sock` |
 
 ### Architecture
 
@@ -207,9 +207,9 @@ The bottleneck is `psutil.sensors_temperatures()` (~30ms) which reads all hwmon 
 
 ---
 
-## IPC — Using ThermalCore from other projects
+## IPC — Using CorePulse from other projects
 
-ThermalCore exposes a **Unix domain socket** at `/tmp/thermalcore.sock` that any application can connect to. When a sensor alert fires, ThermalCore sends a JSON message through the socket. This lets you build external tools that react to hardware events — for example, pausing a render job when the GPU overheats, or shutting down a game server when CPU temperatures are too high.
+CorePulse exposes a **Unix domain socket** at `/tmp/corepulse.sock` that any application can connect to. When a sensor alert fires, CorePulse sends a JSON message through the socket. This lets you build external tools that react to hardware events — for example, pausing a render job when the GPU overheats, or shutting down a game server when CPU temperatures are too high.
 
 ### Protocol
 
@@ -235,7 +235,7 @@ The protocol is simple: **one JSON object per line**, newline-delimited. Connect
 import socket, json
 
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-sock.connect("/tmp/thermalcore.sock")
+sock.connect("/tmp/corepulse.sock")
 
 buffer = ""
 while True:
@@ -251,14 +251,14 @@ while True:
 **Bash (with socat):**
 
 ```bash
-socat - UNIX-CONNECT:/tmp/thermalcore.sock
+socat - UNIX-CONNECT:/tmp/corepulse.sock
 ```
 
 **Any language** that supports Unix sockets can connect — Go, Rust, C, Node.js, etc.
 
 ### Running the examples
 
-Both examples require ThermalCore to be running first, with at least one alert threshold configured (double-click the Alert column on any sensor).
+Both examples require CorePulse to be running first, with at least one alert threshold configured (double-click the Alert column on any sensor).
 
 **alert_watcher.py** — CLI tool that prints alerts and optionally kills a process:
 
@@ -284,11 +284,11 @@ source .venv/bin/activate
 python examples/demo_app.py
 ```
 
-The window shows "Connected to ThermalCore. Waiting for alert..." in green. When an alert fires, it turns red with the sensor info and closes after 2 seconds. This demonstrates how a workload app could self-terminate when the system overheats.
+The window shows "Connected to CorePulse. Waiting for alert..." in green. When an alert fires, it turns red with the sensor info and closes after 2 seconds. This demonstrates how a workload app could self-terminate when the system overheats.
 
 ### Use case: leaving the PC unattended
 
-Set alert thresholds on CPU and GPU temperature (e.g., 85°C), then run `alert_watcher.py --kill <your-workload>`. If temperatures exceed the threshold while you're away, ThermalCore will signal the watcher, which kills the workload to protect the hardware.
+Set alert thresholds on CPU and GPU temperature (e.g., 85°C), then run `alert_watcher.py --kill <your-workload>`. If temperatures exceed the threshold while you're away, CorePulse will signal the watcher, which kills the workload to protect the hardware.
 
 ---
 
@@ -297,7 +297,7 @@ Set alert thresholds on CPU and GPU temperature (e.g., 85°C), then run `alert_w
 ### Project structure
 
 ```
-ThermalCore/
+CorePulse/
 |-- src/
 |   |-- main.py                  # Entry point
 |   |-- app.py                   # QApplication setup + QSS theme
@@ -330,12 +330,12 @@ ThermalCore/
 |   |-- CODING_STANDARDS.md      # How to write code (for AI and contributors)
 |   `-- COMMIT_STANDARDS.md      # Git commit conventions
 |-- assets/icons/
-|   `-- thermalcore.svg
+|   `-- corepulse.svg
 |-- requirements.txt
 |-- pyproject.toml
 |-- setup.sh                     # One-command installer
-|-- thermalcore.sh               # Launcher script
-`-- thermalcore.desktop          # GNOME desktop integration
+|-- corepulse.sh               # Launcher script
+`-- corepulse.desktop          # GNOME desktop integration
 ```
 
 ### How to add a new sensor

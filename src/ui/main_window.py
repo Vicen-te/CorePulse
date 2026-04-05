@@ -1,5 +1,5 @@
 """
-Main window layout for ThermalCore.
+Main window layout for CorePulse.
 
 Tree view with 3-level hierarchy: Hardware -> Sensor Type -> Individual Sensor.
 """
@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
 
         self._log_data.append((datetime.now().isoformat(), *values))
 
-        self._tray_icon.setToolTip(f"ThermalCore — {hottest_name}: {hottest_temp:.0f}°C")
+        self._tray_icon.setToolTip(f"CorePulse — {hottest_name}: {hottest_temp:.0f}°C")
         self._check_alerts(readings)
 
     def _hide_inactive_sensors(self) -> None:
@@ -629,7 +629,7 @@ class MainWindow(QMainWindow):
         if not self._log_data:
             return
 
-        default_name = f"thermalcore_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        default_name = f"corepulse_{datetime.now():%Y%m%d_%H%M%S}.csv"
         path, _ = QFileDialog.getSaveFileName(self, "Export", default_name, "CSV (*.csv)")
         if not path:
             return
@@ -659,7 +659,7 @@ class MainWindow(QMainWindow):
 
         self._tray_icon.setContextMenu(menu)
         self._tray_icon.activated.connect(self._on_tray_activated)
-        self._tray_icon.setToolTip("ThermalCore — Loading...")
+        self._tray_icon.setToolTip("CorePulse — Loading...")
         self._tray_icon.show()
 
     def closeEvent(self, event: object) -> None:

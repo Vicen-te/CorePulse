@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-Demo: external app that reacts to ThermalCore alerts.
+Demo: external app that reacts to CorePulse alerts.
 
-Connects to ThermalCore's Unix socket and listens for alert events.
+Connects to CorePulse's Unix socket and listens for alert events.
 When an alert fires, it prints the event and (optionally) kills a
 target process — showing how any app could auto-shutdown when
 temperatures get too high.
 
 Usage:
-    # Terminal 1: run ThermalCore
-    ./thermalcore.sh
+    # Terminal 1: run CorePulse
+    ./corepulse.sh
 
     # Terminal 2: run this watcher (just prints alerts)
     python examples/alert_watcher.py
@@ -20,7 +20,7 @@ Usage:
     # Or: kill by PID
     python examples/alert_watcher.py --kill-pid 12345
 
-    # Then set an alert in ThermalCore (double-click Alert column)
+    # Then set an alert in CorePulse (double-click Alert column)
     # and wait for it to trigger.
 """
 
@@ -32,11 +32,11 @@ import socket
 import subprocess
 import sys
 
-SOCKET_PATH = "/tmp/thermalcore.sock"
+SOCKET_PATH = "/tmp/corepulse.sock"
 
 
 def connect() -> socket.socket:
-    """Connect to ThermalCore's IPC socket."""
+    """Connect to CorePulse's IPC socket."""
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     sock.connect(SOCKET_PATH)
     return sock
@@ -55,20 +55,20 @@ def find_pid_by_name(name: str) -> int | None:
 
 
 def main() -> None:
-    """Listen for ThermalCore alerts and react."""
-    parser = argparse.ArgumentParser(description="React to ThermalCore alerts")
+    """Listen for CorePulse alerts and react."""
+    parser = argparse.ArgumentParser(description="React to CorePulse alerts")
     parser.add_argument("--kill", metavar="NAME",
                         help="Process name to kill when an alert fires")
     parser.add_argument("--kill-pid", metavar="PID", type=int,
                         help="PID to kill when an alert fires")
     args = parser.parse_args()
 
-    print(f"Connecting to ThermalCore at {SOCKET_PATH}...")
+    print(f"Connecting to CorePulse at {SOCKET_PATH}...")
     try:
         sock = connect()
     except (FileNotFoundError, ConnectionRefusedError):
-        print("ERROR: ThermalCore is not running or IPC is not available.")
-        print("Start ThermalCore first, then run this script.")
+        print("ERROR: CorePulse is not running or IPC is not available.")
+        print("Start CorePulse first, then run this script.")
         sys.exit(1)
 
     print("Connected. Waiting for alerts...\n")
@@ -78,7 +78,7 @@ def main() -> None:
         while True:
             data = sock.recv(4096)
             if not data:
-                print("ThermalCore disconnected.")
+                print("CorePulse disconnected.")
                 break
 
             buffer += data.decode()

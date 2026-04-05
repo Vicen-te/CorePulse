@@ -1,5 +1,5 @@
 """
-Entry point for ThermalCore HW Monitor.
+Entry point for CorePulse HW Monitor.
 
 Launches the Qt application for real-time temperature monitoring.
 """
@@ -12,8 +12,8 @@ from app import create_app
 
 
 def main() -> None:
-    """Start the ThermalCore application."""
-    sys.argv[0] = "thermalcore"
+    """Start the CorePulse application."""
+    sys.argv[0] = "corepulse"
     app, _window = create_app()
     sys.exit(app.exec())
 

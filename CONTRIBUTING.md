@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in ThermalCore.
+Thanks for your interest in CorePulse.
 
 ## How to contribute
 

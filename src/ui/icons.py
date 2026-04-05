@@ -1,5 +1,5 @@
 """
-Icon creation for ThermalCore.
+Icon creation for CorePulse.
 
 Provides the app icon (from SVG or programmatic fallback)
 and tree branch arrow icons for expand/collapse indicators.
@@ -21,7 +21,7 @@ def create_app_icon() -> QIcon:
     """Load the app icon from the SVG asset, with a programmatic fallback."""
     icon_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-        "assets", "icons", "thermalcore.svg",
+        "assets", "icons", "corepulse.svg",
     )
     if os.path.exists(icon_path):
         return QIcon(icon_path)
@@ -74,7 +74,7 @@ def create_branch_icons() -> tuple[str, str]:
     ]))
     p.end()
 
-    tmp_dir = tempfile.mkdtemp(prefix="thermalcore_")
+    tmp_dir = tempfile.mkdtemp(prefix="corepulse_")
     closed_path = os.path.join(tmp_dir, "arrow_closed.png")
     open_path = os.path.join(tmp_dir, "arrow_open.png")
     closed_pix.save(closed_path)

@@ -39,13 +39,13 @@ in real time. Qt window with a dark theme, tree view, alerts, and CSV export.
 ## Project Structure
 
 ```
-ThermalCore/
+CorePulse/
 ├── README.md                    # Everything: install, usage, architecture, contributing
 ├── CLAUDE.md                    # This file (AI agent instructions)
 ├── requirements.txt
 ├── setup.sh                     # One-command installer
-├── thermalcore.sh               # Launcher script
-├── thermalcore.desktop          # Desktop integration
+├── corepulse.sh               # Launcher script
+├── corepulse.desktop          # Desktop integration
 ├── pyproject.toml
 ├── docs/
 │   ├── CODING_STANDARDS.md      # How to write code
@@ -76,7 +76,7 @@ ThermalCore/
 │   ├── alert_watcher.py         # CLI alert reactor
 │   └── demo_app.py              # GUI auto-close on alert
 └── assets/icons/
-    └── thermalcore.svg          # App icon
+    └── corepulse.svg          # App icon
 ```
 
 ---

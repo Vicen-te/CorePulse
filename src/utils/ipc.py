@@ -1,5 +1,5 @@
 """
-IPC server for ThermalCore.
+IPC server for CorePulse.
 
 Broadcasts alert events over a Unix domain socket so external
 apps can react to temperature/load alerts in real time.
@@ -12,7 +12,7 @@ import os
 import socket
 import threading
 
-SOCKET_PATH = "/tmp/thermalcore.sock"
+SOCKET_PATH = "/tmp/corepulse.sock"
 
 
 class AlertBroadcaster:
