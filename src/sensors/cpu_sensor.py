@@ -267,8 +267,30 @@ def discover_cpu_sensors() -> list[BaseSensor]:
             break
 
     if sensor_key is not None:
+        # Separate package/non-core entries from core entries, sort cores numerically
+        package_sensors: list[tuple[int, str]] = []
+        core_sensors: list[tuple[int, str, int]] = []
         for index, entry in enumerate(temps[sensor_key]):
             label = entry.label if entry.label else f"Sensor {index}"
+            if label.startswith("Core "):
+                try:
+                    core_num = int(label.split()[1])
+                except (IndexError, ValueError):
+                    core_num = index
+                core_sensors.append((index, label, core_num))
+            else:
+                package_sensors.append((index, label))
+
+        core_sensors.sort(key=lambda x: x[2])
+
+        for index, label in package_sensors:
+            entry = temps[sensor_key][index]
+            sensors.append(CpuCoreSensor(
+                label=label, sensor_key=sensor_key, index=index,
+                high=entry.high, critical=entry.critical,
+            ))
+        for index, label, _ in core_sensors:
+            entry = temps[sensor_key][index]
             sensors.append(CpuCoreSensor(
                 label=label, sensor_key=sensor_key, index=index,
                 high=entry.high, critical=entry.critical,
