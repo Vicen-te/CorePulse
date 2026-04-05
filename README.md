@@ -40,17 +40,17 @@ Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup
 +-------------------------+---------+---------+---------+----------+
 | Sensor                  | Value   | Min     | Max     | Alert    |
 +-------------------------+---------+---------+---------+----------+
-| > CPU - Intel i7-14700K                                         |
+| > CPU - Intel i7-14700K                                          |
 |   > Temperatures        |         |         |         |          |
-|     Package id 0        | 45.0 C  | 38.0 C  | 72.0 C  | 85.0 C  |
+|     Package id 0        | 45.0 C  | 38.0 C  | 72.0 C  | 85.0 C   |
 |     Core 0              | 42.0 C  | 36.0 C  | 68.0 C  |          |
 |   > Clocks              |         |         |         |          |
 |     CPU Clock           | 4200MHz | 800MHz  | 5000MHz |          |
 |   > Load                |         |         |         |          |
-|     CPU Total           | 12.3 %  |  0.0 %  | 98.5 %  | 90.0 %  |
-| > GPU - RTX 4070 Ti SUPER                                       |
+|     CPU Total           | 12.3 %  |  0.0 %  | 98.5 %  | 90.0 %   |
+| > GPU - RTX 4070 Ti SUPER                                        |
 |   > Temperatures        |         |         |         |          |
-|     GPU Core            | 41.0 C  | 38.0 C  | 78.0 C  | 85.0 C  |
+|     GPU Core            | 41.0 C  | 38.0 C  | 78.0 C  | 85.0 C   |
 |   > Power               |         |         |         |          |
 |     GPU Power           | 15.8 W  | 12.0 W  | 280.0 W |          |
 |   > Fans                |         |         |         |          |
@@ -64,7 +64,7 @@ Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup
 |   > Usage               |         |         |         |          |
 |     Free Space (/)      | 388.9 / 456.3 GB  |         |          |
 +-------------------------+---------+---------+---------+----------+
-| [0.5s|1s|2s|4s] [Reset Min/Max] [Clear Alerts]    [Export CSV]  |
+| [0.5s|1s|2s|4s] [Reset Min/Max] [Clear Alerts]    [Export CSV]   |
 +-------------------------+---------+---------+---------+----------+
 ```
 
@@ -77,7 +77,7 @@ Designed to use minimal resources: **0.1% CPU**, **~50 MB RAM**, **200ms startup
 Download the `.deb` from the [releases page](https://github.com/Vicen-te/ThermalCore/releases) and install:
 
 ```bash
-sudo apt install ./thermalcore_3.0.0_amd64.deb
+sudo apt install ./thermalcore_1.0.0_amd64.deb
 ```
 
 This installs ThermalCore system-wide to `/opt/thermalcore/`, creates the Python environment, configures CPU power monitoring, and adds it to your app launcher. Search **ThermalCore** in your apps or run `thermalcore` from the terminal.
