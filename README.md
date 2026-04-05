@@ -218,24 +218,88 @@ The bottleneck is `psutil.sensors_temperatures()` (~30ms) which reads all hwmon 
 
 ---
 
-## IPC — External app communication
+## IPC — Using ThermalCore from other projects
 
-ThermalCore opens a Unix socket at `/tmp/thermalcore.sock`. When an alert fires, it sends:
+ThermalCore exposes a **Unix domain socket** at `/tmp/thermalcore.sock` that any application can connect to. When a sensor alert fires, ThermalCore sends a JSON message through the socket. This lets you build external tools that react to hardware events — for example, pausing a render job when the GPU overheats, or shutting down a game server when CPU temperatures are too high.
+
+### Protocol
+
+The protocol is simple: **one JSON object per line**, newline-delimited. Connect to the socket, read lines, parse JSON.
 
 ```json
 {"event": "alert", "sensor": "GPU Core", "value": 85.0, "threshold": 80.0, "unit": "\u00b0C"}
 ```
 
-Any app can connect and react. Two examples included:
+| Field | Type | Description |
+|---|---|---|
+| `event` | string | Always `"alert"` (more event types may be added later) |
+| `sensor` | string | Human-readable sensor name (e.g., "GPU Core", "CPU Total") |
+| `value` | float | Current sensor value that triggered the alert |
+| `threshold` | float | The threshold the user configured |
+| `unit` | string | Unit of measurement (`°C`, `%`, `W`, `MHz`, `GB`) |
+
+### Connecting from your own code
+
+**Python:**
+
+```python
+import socket, json
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.connect("/tmp/thermalcore.sock")
+
+buffer = ""
+while True:
+    data = sock.recv(4096).decode()
+    buffer += data
+    while "\n" in buffer:
+        line, buffer = buffer.split("\n", 1)
+        event = json.loads(line)
+        print(f"Alert: {event['sensor']} = {event['value']} {event['unit']}")
+        # Your logic here: kill a process, send a notification, etc.
+```
+
+**Bash (with socat):**
 
 ```bash
-# CLI watcher — prints alerts, optionally kills a process
+socat - UNIX-CONNECT:/tmp/thermalcore.sock
+```
+
+**Any language** that supports Unix sockets can connect — Go, Rust, C, Node.js, etc.
+
+### Running the examples
+
+Both examples require ThermalCore to be running first, with at least one alert threshold configured (double-click the Alert column on any sensor).
+
+**alert_watcher.py** — CLI tool that prints alerts and optionally kills a process:
+
+```bash
+source .venv/bin/activate
+
+# Just watch and print alerts
 python examples/alert_watcher.py
+
+# Kill a process by name when any alert fires
 python examples/alert_watcher.py --kill firefox
 
-# GUI demo — window that auto-closes when an alert fires
+# Kill a specific PID when any alert fires
+python examples/alert_watcher.py --kill-pid 12345
+```
+
+To test it quickly: set a very low threshold (e.g., 30°C on Package id 0) so it triggers immediately.
+
+**demo_app.py** — small Qt window that auto-closes when it receives an alert:
+
+```bash
+source .venv/bin/activate
 python examples/demo_app.py
 ```
+
+The window shows "Connected to ThermalCore. Waiting for alert..." in green. When an alert fires, it turns red with the sensor info and closes after 2 seconds. This demonstrates how a workload app could self-terminate when the system overheats.
+
+### Use case: leaving the PC unattended
+
+Set alert thresholds on CPU and GPU temperature (e.g., 85°C), then run `alert_watcher.py --kill <your-workload>`. If temperatures exceed the threshold while you're away, ThermalCore will signal the watcher, which kills the workload to protect the hardware.
 
 ---
 
@@ -287,25 +351,90 @@ ThermalCore/
 
 ### How to add a new sensor
 
-1. Create a class extending `BaseSensor` in the appropriate file (or a new one under `src/sensors/`)
-2. Implement `get_temperature()`, `get_name()`, `is_available()`, `get_hardware_group()`, `get_type_group()`
-3. Add a `discover_*()` function and call it from `MainWindow._discover_sensors()`
-4. If the sensor reads from a syscall that others share, add it to `refresh_caches()` in `cpu_sensor.py`
-5. Run `python -m pytest tests/ -v` to verify
+1. Create a class in the appropriate file (or a new one under `src/sensors/`) extending `BaseSensor`:
+
+```python
+class MyNewSensor(BaseSensor):
+    def get_temperature(self) -> float:   # Return the current value
+    def get_name(self) -> str:            # Human-readable name
+    def is_available(self) -> bool:       # Can this sensor be read?
+    def get_hardware_group(self) -> str:  # "CPU", "GPU", "Memory", "Storage", or new
+    def get_type_group(self) -> str:      # "Temperatures", "Clocks", "Load", etc.
+    def get_sensor_type(self) -> SensorType:  # For formatting (°C, MHz, %, W...)
+```
+
+2. Add a `discover_*()` function that returns `list[BaseSensor]`
+3. Call it from `MainWindow._discover_sensors()` in `src/ui/main_window.py`
+4. If the sensor reads from a syscall that others share (e.g., `psutil.sensors_temperatures()`), read from `_cache` instead of calling the syscall directly — see `cpu_sensor.py` for the pattern
+5. Run tests to verify: `python -m pytest tests/ -v`
+6. Add unit tests for the new sensor in `tests/test_sensors.py`
 
 ### Running tests
 
 ```bash
 source .venv/bin/activate
 
-# Unit tests (41 tests)
+# Run all 41 unit tests
 python -m pytest tests/ -v
 
-# Performance benchmarks
+# Run a specific test file
+python -m pytest tests/test_sensors.py -v
+
+# Run a specific test class or method
+python -m pytest tests/test_sensors.py::TestCpuSensors -v
+python -m pytest tests/test_sensors.py::TestFormatValue::test_temperature_format -v
+
+# Run with short output (just pass/fail)
+python -m pytest tests/ -q
+```
+
+### Writing new tests
+
+Tests use `unittest` (stdlib) and run via `pytest`. Each test file is under `tests/` with `sys.path.insert(0, "src")` at the top so imports work.
+
+Example — adding a test for a new sensor:
+
+```python
+# tests/test_sensors.py
+
+class TestMyNewSensor(unittest.TestCase):
+    def setUp(self) -> None:
+        self.sensors = discover_my_sensors()
+
+    def test_sensors_found(self) -> None:
+        """At least one sensor should be discovered."""
+        self.assertGreater(len(self.sensors), 0)
+
+    def test_values_reasonable(self) -> None:
+        """Values should be in a sane range."""
+        for sensor in self.sensors:
+            value = sensor.get_temperature()
+            self.assertGreaterEqual(value, 0)
+
+    def test_all_in_correct_group(self) -> None:
+        """All sensors should report the correct hardware group."""
+        for sensor in self.sensors:
+            self.assertEqual(sensor.get_hardware_group(), "MyGroup")
+```
+
+### Running benchmarks
+
+Benchmarks measure real hardware read times — they're not mocked:
+
+```bash
+source .venv/bin/activate
+
+# Per-sensor read times (identifies slow sensors)
 python -m tests.benchmarks.bench_sensors
+
+# Full poll cycle: avg time, memory usage, CPU overhead %
 python -m tests.benchmarks.bench_polling
+
+# Startup breakdown: import, discovery, Qt init, window creation
 python -m tests.benchmarks.bench_startup
 ```
+
+If you add a new sensor or change the cache system, run `bench_polling` to make sure the poll cycle stays under 5ms. Anything above that at the default 1s interval means the cache isn't working.
 
 ### Code standards
 
