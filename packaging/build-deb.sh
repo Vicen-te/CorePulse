@@ -71,7 +71,6 @@ Section: utils
 Priority: optional
 Architecture: ${ARCH}
 Depends: python3 (>= 3.10), python3-venv, lm-sensors, libxcb-cursor0
-Recommends: nvidia-driver-560 | nvidia-driver-550 | nvidia-driver-545 | nvidia-driver-535
 Maintainer: Vicen-te <https://github.com/Vicen-te>
 Homepage: https://github.com/Vicen-te/ThermalCore
 Description: Real-time hardware monitor for Linux
